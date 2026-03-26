@@ -1,0 +1,74 @@
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query } from '@nestjs/common';
+import { StadiumsService } from './stadiums.service';
+import { CreateStadiumDto } from './dto/create-stadium.dto';
+
+@Controller('stadiums')
+export class StadiumsController {
+    constructor(private readonly stadiumsService: StadiumsService) { }
+
+    @Post()
+    create(@Body() createStadiumDto: CreateStadiumDto) {
+        return this.stadiumsService.create(createStadiumDto);
+    }
+
+    @Get()
+    findAll() {
+        return this.stadiumsService.findAll();
+    }
+
+    // Admin endpoints
+    @Get('admin/all')
+    findAllAdmin() {
+        return this.stadiumsService.findAllAdmin();
+    }
+
+    @Get('admin/pending')
+    findPending() {
+        return this.stadiumsService.findPending();
+    }
+
+    @Get('admin/stats')
+    getStats() {
+        return this.stadiumsService.getStats();
+    }
+
+    @Patch(':id/approve')
+    approve(@Param('id') id: string, @Body('adminId') adminId: string) {
+        return this.stadiumsService.approve(id, adminId || 'admin');
+    }
+
+    @Patch(':id/reject')
+    reject(@Param('id') id: string, @Body('reason') reason: string) {
+        return this.stadiumsService.reject(id, reason);
+    }
+
+    @Patch(':id/suspend')
+    suspend(@Param('id') id: string) {
+        return this.stadiumsService.suspend(id);
+    }
+
+    @Get(':id')
+    findOne(@Param('id') id: string) {
+        return this.stadiumsService.findOne(id);
+    }
+
+    @Get('owner/:ownerId')
+    findByOwner(@Param('ownerId') ownerId: string) {
+        return this.stadiumsService.findByOwner(ownerId);
+    }
+
+    @Put(':id')
+    update(@Param('id') id: string, @Body() updateData: Partial<CreateStadiumDto>) {
+        return this.stadiumsService.update(id, updateData);
+    }
+
+    @Delete(':id')
+    delete(@Param('id') id: string) {
+        return this.stadiumsService.delete(id);
+    }
+
+    @Get(':id/available-slots')
+    getAvailableSlots(@Param('id') id: string, @Query('date') date: string) {
+        return this.stadiumsService.getAvailableSlots(id, date);
+    }
+}
