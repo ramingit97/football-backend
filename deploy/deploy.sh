@@ -5,7 +5,8 @@ set -e
 # cd deploy && ./deploy.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+BACKEND_DIR="$(dirname "$SCRIPT_DIR")"
+ROOT_DIR="$(dirname "$BACKEND_DIR")"
 
 echo "=== Football Platform Deploy ==="
 

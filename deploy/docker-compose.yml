@@ -31,7 +31,7 @@ services:
 
   backend:
     build:
-      context: ../backend
+      context: ..
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
