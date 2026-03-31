@@ -287,7 +287,7 @@ export class GamesService {
         }
 
         // Берём только комиссию платформы — остальное игроки платят на месте
-        const amount = Number(game.commissionPerPlayer) > 0 ? Number(game.commissionPerPlayer) : 0.50;
+        const amount = 0.50;
 
         try {
             await this.paymentsService.processPayment(player.id, amount, gameId);
@@ -454,7 +454,7 @@ export class GamesService {
         const gameDate = new Date(game.date);
         const now = new Date();
         const hoursUntilGame = (gameDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-        const refundAmount = Number(game.commissionPerPlayer) > 0 ? Number(game.commissionPerPlayer) : 0.50;
+        const refundAmount = 0.50;
 
         if (hoursUntilGame > 24) {
             try {
