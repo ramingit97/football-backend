@@ -105,6 +105,37 @@ export class AuthService {
         };
     }
 
+    async loginWithGoogle(idToken: string) {
+        const decodedToken = await this.verifyFirebaseToken(idToken);
+
+        const email = decodedToken.email;
+        if (!email) {
+            throw new UnauthorizedException('Email not found in Google token');
+        }
+
+        let user = await this.usersService.findOneByEmail(email);
+        const isNewUser = !user;
+
+        if (!user) {
+            user = await this.usersService.create({
+                email,
+                name: decodedToken.name || email.split('@')[0],
+                avatar: decodedToken.picture || null,
+                role: 'player',
+            } as any);
+        } else if (decodedToken.picture && !user.avatar) {
+            await this.usersService.update(user.id, { avatar: decodedToken.picture } as any);
+            user = await this.usersService.findOneById(user.id);
+        }
+
+        const payload = { email: user.email, sub: user.id, role: user.role };
+        return {
+            access_token: this.jwtService.sign(payload),
+            user: { ...user, password: undefined },
+            isNewUser,
+        };
+    }
+
     async getUserProfile(userId: string) {
         const user = await this.usersService.findOneById(userId);
         if (user) {

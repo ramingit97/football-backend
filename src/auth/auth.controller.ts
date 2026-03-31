@@ -18,6 +18,11 @@ export class AuthController {
         return this.authService.loginWithPhone(idToken);
     }
 
+    @Post('login-google')
+    loginGoogle(@Body('idToken') idToken: string) {
+        return this.authService.loginWithGoogle(idToken);
+    }
+
     @Post('register')
     register(@Body() registerDto: RegisterDto) {
         return this.authService.register(registerDto);
