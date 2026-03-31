@@ -37,6 +37,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - ~/football/backend/firebase-adminsdk.json:/app/firebase-adminsdk.json:ro
     environment:
       PORT: 3000
       DB_HOST: postgres
