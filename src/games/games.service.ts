@@ -286,8 +286,8 @@ export class GamesService {
             }
         }
 
-        let amount = Number(game.slotPrice) > 0 ? Number(game.slotPrice) : Number(game.price || 0.50);
-        if (game.isUrgent) amount = Math.max(0, amount - 0.5);
+        // Берём только комиссию платформы — остальное игроки платят на месте
+        const amount = Number(game.commissionPerPlayer) > 0 ? Number(game.commissionPerPlayer) : 0.50;
 
         try {
             await this.paymentsService.processPayment(player.id, amount, gameId);
@@ -454,8 +454,7 @@ export class GamesService {
         const gameDate = new Date(game.date);
         const now = new Date();
         const hoursUntilGame = (gameDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-        let refundAmount = Number(game.slotPrice) > 0 ? Number(game.slotPrice) : Number(game.price || 0.50);
-        if (game.isUrgent) refundAmount = Math.max(0, refundAmount - 0.5);
+        const refundAmount = Number(game.commissionPerPlayer) > 0 ? Number(game.commissionPerPlayer) : 0.50;
 
         if (hoursUntilGame > 24) {
             try {

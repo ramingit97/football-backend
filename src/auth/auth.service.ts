@@ -6,7 +6,28 @@ import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
-let authApp: admin.app.App;
+let authApp: admin.app.App | null = null;
+
+function getAuthApp(logger: Logger): admin.app.App | null {
+    if (authApp) return authApp;
+
+    // Reuse existing 'auth' app if already initialized
+    const existing = admin.apps.find(a => a?.name === 'auth');
+    if (existing) {
+        authApp = existing;
+        return authApp;
+    }
+
+    try {
+        const serviceAccount = require('../../firebase-adminsdk.json');
+        authApp = admin.initializeApp({ credential: admin.credential.cert(serviceAccount) }, 'auth');
+        logger.log('Firebase Admin (auth) initialized successfully');
+    } catch (error) {
+        logger.warn('Failed to initialize Firebase Admin for auth: ' + error.message);
+    }
+
+    return authApp;
+}
 
 @Injectable()
 export class AuthService {
@@ -16,15 +37,7 @@ export class AuthService {
         private usersService: UsersService,
         private jwtService: JwtService,
     ) {
-        if (!authApp) {
-            try {
-                const serviceAccount = require('../../firebase-adminsdk.json');
-                authApp = admin.initializeApp({ credential: admin.credential.cert(serviceAccount) }, 'auth');
-                this.logger.log('Firebase Admin (auth) initialized successfully');
-            } catch (error) {
-                this.logger.warn('Failed to initialize Firebase Admin for auth.', error);
-            }
-        }
+        getAuthApp(this.logger);
     }
 
     async validateUser(email: string, pass: string): Promise<any> {
@@ -66,10 +79,12 @@ export class AuthService {
     }
 
     async verifyFirebaseToken(idToken: string): Promise<admin.auth.DecodedIdToken> {
+        const app = getAuthApp(this.logger);
+        if (!app) throw new UnauthorizedException('Firebase not initialized');
         try {
-            return await admin.auth(authApp).verifyIdToken(idToken);
+            return await admin.auth(app).verifyIdToken(idToken);
         } catch (error) {
-            this.logger.error('Error verifying Firebase token', error);
+            this.logger.error('Error verifying Firebase token', error.message);
             throw new UnauthorizedException('Invalid Firebase token');
         }
     }
