@@ -2,17 +2,34 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SupportTicket } from './entities/support-ticket.entity';
+import { TelegramService } from '../stadiums/telegram.service';
 
 @Injectable()
 export class SupportService {
     constructor(
         @InjectRepository(SupportTicket)
         private ticketRepo: Repository<SupportTicket>,
+        private readonly telegramService: TelegramService,
     ) {}
 
     async create(userId: string, userName: string, userEmail: string, message: string): Promise<SupportTicket> {
         const ticket = this.ticketRepo.create({ userId, userName, userEmail, message, status: 'open' });
-        return this.ticketRepo.save(ticket);
+        const saved = await this.ticketRepo.save(ticket);
+
+        const text = [
+            `💬 <b>Yeni dəstək müraciəti</b>`,
+            ``,
+            `👤 <b>${userName}</b>${userEmail ? ` (${userEmail})` : ''}`,
+            `🆔 <code>${saved.id.slice(0, 8)}</code>`,
+            ``,
+            `${message}`,
+            ``,
+            `↩️ Cavab: <code>/reply ${saved.id} mətn</code>`,
+        ].join('\n');
+
+        this.telegramService.sendMessage(process.env.TELEGRAM_CHAT_ID || '', text).catch(() => {});
+
+        return saved;
     }
 
     async findByUser(userId: string): Promise<SupportTicket[]> {
