@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
 
 @Injectable()
 export class TelegramService {
@@ -19,6 +18,14 @@ export class TelegramService {
 
     private get isConfigured(): boolean {
         return !!(this.botToken && this.chatId);
+    }
+
+    private async post(method: string, body: object): Promise<void> {
+        await fetch(`${this.apiUrl}/${method}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
     }
 
     async sendStadiumRequest(stadium: any, submitterName: string): Promise<void> {
@@ -56,7 +63,7 @@ export class TelegramService {
         };
 
         try {
-            await axios.post(`${this.apiUrl}/sendMessage`, {
+            await this.post('sendMessage', {
                 chat_id: this.chatId,
                 text: lines,
                 parse_mode: 'Markdown',
@@ -71,10 +78,7 @@ export class TelegramService {
                     media: url,
                     ...(i === 0 ? { caption: `📸 ${stadium.name}` } : {}),
                 }));
-                await axios.post(`${this.apiUrl}/sendMediaGroup`, {
-                    chat_id: this.chatId,
-                    media,
-                });
+                await this.post('sendMediaGroup', { chat_id: this.chatId, media });
             }
         } catch (err: any) {
             this.logger.error('Telegram sendStadiumRequest failed:', err?.message);
@@ -84,7 +88,7 @@ export class TelegramService {
     async answerCallback(callbackQueryId: string, text: string): Promise<void> {
         if (!this.isConfigured) return;
         try {
-            await axios.post(`${this.apiUrl}/answerCallbackQuery`, {
+            await this.post('answerCallbackQuery', {
                 callback_query_id: callbackQueryId,
                 text,
                 show_alert: false,
@@ -97,7 +101,7 @@ export class TelegramService {
     async editMessage(chatId: string | number, messageId: number, text: string): Promise<void> {
         if (!this.isConfigured) return;
         try {
-            await axios.post(`${this.apiUrl}/editMessageText`, {
+            await this.post('editMessageText', {
                 chat_id: chatId,
                 message_id: messageId,
                 text,
