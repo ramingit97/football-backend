@@ -21,6 +21,11 @@ export class StadiumsController {
     }
 
     // Admin endpoints
+    @Post(':id/notify')
+    notifyAdmin(@Param('id') id: string, @Body('submitterName') submitterName: string) {
+        return this.stadiumsService.notifyAdmin(id, submitterName || 'Bilinməyən');
+    }
+
     // ── Telegram webhook ──────────────────────────────────
     @Post('telegram-webhook')
     async telegramWebhook(@Body() body: any) {

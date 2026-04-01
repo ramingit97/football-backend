@@ -22,10 +22,13 @@ export class StadiumsService {
             ...data,
             status: 'pending',
         });
-        const saved = await this.stadiumsRepository.save(stadium);
-        // Fire-and-forget Telegram notification
-        this.telegramService.sendStadiumRequest(saved, suggestedByName || saved.ownerId).catch(() => {});
-        return saved;
+        return this.stadiumsRepository.save(stadium);
+    }
+
+    async notifyAdmin(id: string, submitterName: string): Promise<void> {
+        const stadium = await this.findOne(id);
+        if (!stadium) return;
+        this.telegramService.sendStadiumRequest(stadium, submitterName).catch(() => {});
     }
 
     // Find only approved stadiums (for users)

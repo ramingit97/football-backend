@@ -11,6 +11,7 @@ export class MinioService implements OnModuleInit {
     private readonly secretKey = process.env.MINIO_SECRET_KEY || 'minioadmin123';
     private readonly bucketName = process.env.MINIO_BUCKET || 'football-files';
     private readonly useSSL = process.env.MINIO_USE_SSL === 'true';
+    private readonly publicUrl = process.env.MINIO_PUBLIC_URL || null;
 
     constructor() {
         this.client = new Minio.Client({
@@ -67,7 +68,9 @@ export class MinioService implements OnModuleInit {
             { 'Content-Type': file.mimetype },
         );
 
-        const url = `http://${this.endPoint}:${this.port}/${this.bucketName}/${key}`;
+        const url = this.publicUrl
+            ? `${this.publicUrl}/${key}`
+            : `http://${this.endPoint}:${this.port}/${this.bucketName}/${key}`;
 
         return { url, key };
     }
@@ -91,6 +94,8 @@ export class MinioService implements OnModuleInit {
     }
 
     getPublicUrl(key: string): string {
-        return `http://${this.endPoint}:${this.port}/${this.bucketName}/${key}`;
+        return this.publicUrl
+            ? `${this.publicUrl}/${key}`
+            : `http://${this.endPoint}:${this.port}/${this.bucketName}/${key}`;
     }
 }
