@@ -13,6 +13,6 @@ import { BookingsModule } from '../bookings/bookings.module';
     ],
     controllers: [StadiumsController],
     providers: [StadiumsService, TelegramService],
-    exports: [StadiumsService],
+    exports: [StadiumsService, TelegramService],
 })
 export class StadiumsModule {}

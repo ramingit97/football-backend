@@ -91,6 +91,20 @@ export class TelegramService {
         }
     }
 
+    async sendMessage(chatId: string | number, text: string): Promise<void> {
+        if (!this.isConfigured) return;
+        try {
+            await this.post('sendMessage', {
+                chat_id: chatId,
+                text,
+                parse_mode: 'HTML',
+                disable_web_page_preview: true,
+            });
+        } catch (err: any) {
+            this.logger.error('Telegram sendMessage failed:', err?.message);
+        }
+    }
+
     async answerCallback(callbackQueryId: string, text: string): Promise<void> {
         if (!this.isConfigured) return;
         try {

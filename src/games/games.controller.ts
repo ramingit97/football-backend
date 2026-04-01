@@ -67,6 +67,11 @@ export class GamesController {
         return this.gamesService.delete(id);
     }
 
+    @Post(':id/cancel')
+    cancelGame(@Param('id') id: string, @Body() body: { organizerId: string; reason?: string }) {
+        return this.gamesService.cancelGame(id, body.organizerId, body.reason);
+    }
+
     @Post(':id/join')
     joinGame(@Param('id') id: string, @Body() body: any) {
         const { referredBy, ...player } = body;

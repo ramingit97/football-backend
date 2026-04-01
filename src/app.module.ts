@@ -15,6 +15,8 @@ import { FilesModule } from './files/files.module';
 import { TeamsModule } from './teams/teams.module';
 import { ChallengesModule } from './challenges/challenges.module';
 import { GamesModule } from './games/games.module';
+import { SupportModule } from './support/support.module';
+import { TelegramBotModule } from './telegram-bot/telegram-bot.module';
 
 import { User } from './users/entities/user.entity';
 import { Transaction } from './users/entities/transaction.entity';
@@ -31,6 +33,7 @@ import { MetroStation } from './locations/entities/metro-station.entity';
 import { Team } from './teams/entities/team.entity';
 import { TeamJoinRequest } from './teams/entities/team-join-request.entity';
 import { Challenge } from './challenges/entities/challenge.entity';
+import { SupportTicket } from './support/entities/support-ticket.entity';
 import { Game } from './games/entities/game.entity';
 import { GamePlayerStats } from './games/entities/game-player-stats.entity';
 import { ChatMessage } from './games/entities/chat-message.entity';
@@ -59,6 +62,7 @@ import { PlayerReport } from './games/entities/player-report.entity';
                     Team, TeamJoinRequest,
                     Challenge,
                     Game, GamePlayerStats, ChatMessage, NoShow, PlayerReport,
+                    SupportTicket,
                 ],
                 synchronize: true,
                 retryAttempts: 10,
@@ -79,6 +83,8 @@ import { PlayerReport } from './games/entities/player-report.entity';
         TeamsModule,
         ChallengesModule,
         GamesModule,
+        SupportModule,
+        TelegramBotModule,
     ],
 })
 export class AppModule {}

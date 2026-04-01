@@ -263,6 +263,43 @@ export class GamesService {
         await this.gamesRepository.delete(id);
     }
 
+    async cancelGame(gameId: string, organizerId: string, reason?: string): Promise<Game> {
+        const game = await this.findOne(gameId);
+        if (!game) throw new NotFoundException('Game not found');
+        if (game.organizerId !== organizerId) throw new BadRequestException('Only organizer can cancel');
+        if (game.status === 'cancelled') throw new BadRequestException('Game already cancelled');
+        if (game.status === 'finished') throw new BadRequestException('Cannot cancel finished game');
+
+        game.status = 'cancelled';
+
+        // Cancel booking if exists
+        if (game.bookingId) {
+            try { await this.bookingsService.updateStatus(game.bookingId, 'cancelled'); } catch {}
+        }
+        game.bookingStatus = 'cancelled';
+
+        const saved = await this.gamesRepository.save(game);
+
+        // Refund all participants and notify
+        for (const player of game.players) {
+            if (player.id === organizerId) continue;
+            try {
+                await this.paymentsService.refundToWallet(player.id, 0.50);
+                await this.notificationsService.sendNotification(
+                    player.id, 'GAME_CANCELLED',
+                    'Oyun ləğv edildi',
+                    `${game.title} ləğv edildi${reason ? ': ' + reason : ''}. 0.50 ₼ qaytarıldı.`,
+                    undefined,
+                    { gameId: game.id },
+                );
+            } catch (e) {
+                console.error(`Failed to refund/notify player ${player.id}:`, e.message);
+            }
+        }
+
+        return saved;
+    }
+
     async joinGame(gameId: string, player: any, referredBy?: string): Promise<Game> {
         const game = await this.findOne(gameId);
 
