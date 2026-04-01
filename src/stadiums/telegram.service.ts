@@ -21,11 +21,15 @@ export class TelegramService {
     }
 
     private async post(method: string, body: object): Promise<void> {
-        await fetch(`${this.apiUrl}/${method}`, {
+        const res = await fetch(`${this.apiUrl}/${method}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
         });
+        if (!res.ok) {
+            const text = await res.text();
+            this.logger.error(`Telegram ${method} failed [${res.status}]: ${text}`);
+        }
     }
 
     async sendStadiumRequest(stadium: any, submitterName: string): Promise<void> {
