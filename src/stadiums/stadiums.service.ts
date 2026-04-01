@@ -4,6 +4,7 @@ import { Repository, Not } from 'typeorm';
 import { Stadium } from './entities/stadium.entity';
 import { CreateStadiumDto } from './dto/create-stadium.dto';
 import { BookingsService } from '../bookings/bookings.service';
+import { TelegramService } from './telegram.service';
 
 @Injectable()
 export class StadiumsService {
@@ -12,14 +13,19 @@ export class StadiumsService {
         private stadiumsRepository: Repository<Stadium>,
         @Inject(forwardRef(() => BookingsService))
         private bookingsService: BookingsService,
+        private telegramService: TelegramService,
     ) { }
 
-    create(createStadiumDto: CreateStadiumDto): Promise<Stadium> {
+    async create(createStadiumDto: CreateStadiumDto): Promise<Stadium> {
+        const { suggestedByName, ...data } = createStadiumDto;
         const stadium = this.stadiumsRepository.create({
-            ...createStadiumDto,
-            status: 'pending', // New stadiums require approval
+            ...data,
+            status: 'pending',
         });
-        return this.stadiumsRepository.save(stadium);
+        const saved = await this.stadiumsRepository.save(stadium);
+        // Fire-and-forget Telegram notification
+        this.telegramService.sendStadiumRequest(saved, suggestedByName || saved.ownerId).catch(() => {});
+        return saved;
     }
 
     // Find only approved stadiums (for users)

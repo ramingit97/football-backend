@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Stadium } from './entities/stadium.entity';
 import { StadiumsService } from './stadiums.service';
 import { StadiumsController } from './stadiums.controller';
+import { TelegramService } from './telegram.service';
 import { BookingsModule } from '../bookings/bookings.module';
 
 @Module({
@@ -11,7 +12,7 @@ import { BookingsModule } from '../bookings/bookings.module';
         forwardRef(() => BookingsModule),
     ],
     controllers: [StadiumsController],
-    providers: [StadiumsService],
+    providers: [StadiumsService, TelegramService],
     exports: [StadiumsService],
 })
 export class StadiumsModule {}

@@ -1,10 +1,14 @@
 import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query } from '@nestjs/common';
 import { StadiumsService } from './stadiums.service';
+import { TelegramService } from './telegram.service';
 import { CreateStadiumDto } from './dto/create-stadium.dto';
 
 @Controller('stadiums')
 export class StadiumsController {
-    constructor(private readonly stadiumsService: StadiumsService) { }
+    constructor(
+        private readonly stadiumsService: StadiumsService,
+        private readonly telegramService: TelegramService,
+    ) { }
 
     @Post()
     create(@Body() createStadiumDto: CreateStadiumDto) {
@@ -17,6 +21,41 @@ export class StadiumsController {
     }
 
     // Admin endpoints
+    // ── Telegram webhook ──────────────────────────────────
+    @Post('telegram-webhook')
+    async telegramWebhook(@Body() body: any) {
+        const cb = body?.callback_query;
+        if (!cb) return { ok: true };
+
+        const data: string = cb.data || '';
+        const [action, stadiumId] = data.split('_');
+
+        if (!stadiumId) {
+            await this.telegramService.answerCallback(cb.id, '❓ Bilinməyən əmr');
+            return { ok: true };
+        }
+
+        if (action === 'approve') {
+            await this.stadiumsService.approve(stadiumId, 'telegram-admin');
+            await this.telegramService.answerCallback(cb.id, '✅ Stadion təsdiq edildi!');
+            await this.telegramService.editMessage(
+                cb.message.chat.id,
+                cb.message.message_id,
+                `${cb.message.text}\n\n✅ *TƏSDİQ EDİLDİ*`,
+            );
+        } else if (action === 'reject') {
+            await this.stadiumsService.reject(stadiumId, 'Telegram vasitəsilə rədd edildi');
+            await this.telegramService.answerCallback(cb.id, '❌ Stadion rədd edildi');
+            await this.telegramService.editMessage(
+                cb.message.chat.id,
+                cb.message.message_id,
+                `${cb.message.text}\n\n❌ *RƏD EDİLDİ*`,
+            );
+        }
+
+        return { ok: true };
+    }
+
     @Get('admin/all')
     findAllAdmin() {
         return this.stadiumsService.findAllAdmin();
