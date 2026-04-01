@@ -42,21 +42,23 @@ export class TelegramService {
             ? stadium.amenities.join(', ')
             : '—';
 
+        const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
         const lines = [
-            `🏟 *Yeni stadion təklifi*`,
+            `🏟 <b>Yeni stadion təklifi</b>`,
             ``,
-            `*Ad:* ${stadium.name}`,
-            `*Ünvan:* ${stadium.location}`,
-            stadium.district ? `*Rayon:* ${stadium.district}` : null,
-            stadium.metro    ? `*Metro:* ${stadium.metro}`    : null,
-            `*Qiymət:* ${stadium.pricePerHour} ₼/saat`,
-            `*İş saatları:* ${stadium.openTime} – ${stadium.closeTime}`,
-            `*Şəraiti:* ${amenitiesText}`,
-            stadium.description ? `*Açıqlama:* ${stadium.description}` : null,
-            stadium.stadiumLink ? `*Google Maps:* ${stadium.stadiumLink}` : null,
+            `<b>Ad:</b> ${esc(stadium.name)}`,
+            `<b>Ünvan:</b> ${esc(stadium.location)}`,
+            stadium.district ? `<b>Rayon:</b> ${esc(stadium.district)}` : null,
+            stadium.metro    ? `<b>Metro:</b> ${esc(stadium.metro)}`    : null,
+            `<b>Qiymət:</b> ${stadium.pricePerHour} ₼/saat`,
+            `<b>İş saatları:</b> ${stadium.openTime} – ${stadium.closeTime}`,
+            `<b>Şəraiti:</b> ${esc(amenitiesText)}`,
+            stadium.description ? `<b>Açıqlama:</b> ${esc(stadium.description)}` : null,
+            stadium.stadiumLink ? `<b>Google Maps:</b> ${esc(stadium.stadiumLink)}` : null,
             ``,
-            `👤 *Göndərən:* ${submitterName}`,
-            `🆔 \`${stadium.id}\``,
+            `👤 <b>Göndərən:</b> ${esc(submitterName)}`,
+            `🆔 <code>${stadium.id}</code>`,
         ].filter(Boolean).join('\n');
 
         const replyMarkup = {
@@ -70,7 +72,7 @@ export class TelegramService {
             await this.post('sendMessage', {
                 chat_id: this.chatId,
                 text: lines,
-                parse_mode: 'Markdown',
+                parse_mode: 'HTML',
                 reply_markup: replyMarkup,
                 disable_web_page_preview: true,
             });
@@ -109,7 +111,7 @@ export class TelegramService {
                 chat_id: chatId,
                 message_id: messageId,
                 text,
-                parse_mode: 'Markdown',
+                parse_mode: 'HTML',
             });
         } catch (err: any) {
             this.logger.error('Telegram editMessage failed:', err?.message);

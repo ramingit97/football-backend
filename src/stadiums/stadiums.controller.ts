@@ -41,7 +41,7 @@ export class StadiumsController {
             await this.telegramService.editMessage(
                 cb.message.chat.id,
                 cb.message.message_id,
-                `${cb.message.text}\n\n✅ *TƏSDİQ EDİLDİ*`,
+                `${cb.message.text}\n\n✅ <b>TƏSDİQ EDİLDİ</b>`,
             );
         } else if (action === 'reject') {
             await this.stadiumsService.reject(stadiumId, 'Telegram vasitəsilə rədd edildi');
@@ -49,7 +49,7 @@ export class StadiumsController {
             await this.telegramService.editMessage(
                 cb.message.chat.id,
                 cb.message.message_id,
-                `${cb.message.text}\n\n❌ *RƏD EDİLDİ*`,
+                `${cb.message.text}\n\n❌ <b>RƏD EDİLDİ</b>`,
             );
         }
 
