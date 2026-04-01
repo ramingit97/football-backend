@@ -12,22 +12,24 @@ export class SupportService {
         private readonly telegramService: TelegramService,
     ) {}
 
-    async create(userId: string, userName: string, userEmail: string, message: string): Promise<SupportTicket> {
+    async create(userId: string, userName: string, userEmail: string, message: string, silent = false): Promise<SupportTicket> {
         const ticket = this.ticketRepo.create({ userId, userName, userEmail, message, status: 'open' });
         const saved = await this.ticketRepo.save(ticket);
 
-        const text = [
-            `💬 <b>Yeni dəstək müraciəti</b>`,
-            ``,
-            `👤 <b>${userName}</b>${userEmail ? ` (${userEmail})` : ''}`,
-            `🆔 <code>${saved.id.slice(0, 8)}</code>`,
-            ``,
-            `${message}`,
-            ``,
-            `↩️ Cavab: <code>/reply ${saved.id} mətn</code>`,
-        ].join('\n');
+        if (!silent) {
+            const text = [
+                `💬 <b>Yeni dəstək müraciəti</b>`,
+                ``,
+                `👤 <b>${userName}</b>${userEmail ? ` (${userEmail})` : ''}`,
+                `🆔 <code>${saved.id.slice(0, 8)}</code>`,
+                ``,
+                `${message}`,
+                ``,
+                `↩️ Cavab: <code>/reply ${saved.id} mətn</code>`,
+            ].join('\n');
 
-        this.telegramService.sendMessage(process.env.TELEGRAM_CHAT_ID || '', text).catch(() => {});
+            this.telegramService.sendMessage(process.env.TELEGRAM_CHAT_ID || '', text).catch(() => {});
+        }
 
         return saved;
     }
@@ -60,5 +62,17 @@ export class SupportService {
 
     async findOne(id: string): Promise<SupportTicket | null> {
         return this.ticketRepo.findOneBy({ id });
+    }
+
+    async createSystemNotification(userId: string, text: string): Promise<SupportTicket> {
+        const ticket = this.ticketRepo.create({
+            userId,
+            userName: '🤖 Sistem',
+            userEmail: '',
+            message: '',
+            reply: text,
+            status: 'replied',
+        });
+        return this.ticketRepo.save(ticket);
     }
 }

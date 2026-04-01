@@ -103,8 +103,20 @@ export class TelegramBotController {
                     return { ok: true };
                 }
                 await this.usersService.updateBalance(user.id, amount);
+                const newBalance = (user.balance || 0) + amount;
+                const notifyMsg = `💰 Balansınıza +${amount} ₼ əlavə edildi. Yeni balans: ${newBalance.toFixed(2)} ₼`;
+                // Push notification
+                await this.notificationsService.sendNotification(
+                    user.id, 'BALANCE_ADDED',
+                    '💰 Balans artırıldı',
+                    notifyMsg,
+                    undefined,
+                    { amount: String(amount) },
+                ).catch(() => {});
+                // System notification in support chat (shows as support reply)
+                await this.supportService.createSystemNotification(user.id, notifyMsg).catch(() => {});
                 await this.telegramService.sendMessage(chatId,
-                    `✅ <b>${user.name}</b> balansına <b>+${amount} ₼</b> əlavə edildi\nYeni balans: ${(user.balance || 0) + amount} ₼`);
+                    `✅ <b>${user.name}</b> balansına <b>+${amount} ₼</b> əlavə edildi\nYeni balans: ${newBalance.toFixed(2)} ₼`);
                 return { ok: true };
             }
 

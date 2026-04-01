@@ -49,8 +49,26 @@ export class AuthService {
         return null;
     }
 
+    async validateUserByPhone(phone: string, pass: string): Promise<any> {
+        const user = await this.usersService.findOneByPhone(phone);
+        if (user && user.password && (await bcrypt.compare(pass, user.password))) {
+            const { password, ...result } = user;
+            return result;
+        }
+        return null;
+    }
+
     async login(loginDto: LoginDto) {
-        const user = await this.validateUser(loginDto.email, loginDto.password);
+        let user: any = null;
+        if (loginDto.phone) {
+            // Normalize: strip leading 0 and spaces, prepend +994 if no country code
+            let phone = loginDto.phone.replace(/\s/g, '');
+            if (phone.startsWith('0')) phone = phone.substring(1);
+            if (!phone.startsWith('+')) phone = `+994${phone}`;
+            user = await this.validateUserByPhone(phone, loginDto.password);
+        } else if (loginDto.email) {
+            user = await this.validateUser(loginDto.email, loginDto.password);
+        }
         if (!user) {
             throw new UnauthorizedException('Invalid credentials');
         }
