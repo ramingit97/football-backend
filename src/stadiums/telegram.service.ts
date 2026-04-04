@@ -95,26 +95,111 @@ export class TelegramService {
     private lastLandingNotif = 0;
     private landingVisitCount = 0;
 
-    async sendLandingVisit(ip?: string, userAgent?: string): Promise<void> {
+    private parseUA(ua: string): { browser: string; os: string; device: string } {
+        const s = ua || '';
+        let browser = 'Unknown';
+        if (/Edg\//.test(s))         browser = 'Edge';
+        else if (/OPR\/|Opera/.test(s)) browser = 'Opera';
+        else if (/Chrome\//.test(s)) browser = 'Chrome';
+        else if (/Firefox\//.test(s)) browser = 'Firefox';
+        else if (/Safari\//.test(s)) browser = 'Safari';
+
+        let os = 'Unknown';
+        if (/Windows NT 10/.test(s))     os = 'Windows 10/11';
+        else if (/Windows/.test(s))      os = 'Windows';
+        else if (/iPhone/.test(s))       os = 'iOS (iPhone)';
+        else if (/iPad/.test(s))         os = 'iOS (iPad)';
+        else if (/Android/.test(s)) {
+            const v = s.match(/Android ([\d.]+)/)?.[1];
+            os = v ? `Android ${v}` : 'Android';
+        }
+        else if (/Mac OS X/.test(s))     os = 'macOS';
+        else if (/Linux/.test(s))        os = 'Linux';
+
+        const device = /Mobile|Android|iPhone|iPad/.test(s) ? '📱 Mobil' : '🖥 Desktop';
+        return { browser, os, device };
+    }
+
+    private async geoLookup(ip: string): Promise<{ flag: string; city: string; country: string; isp: string } | null> {
+        // Skip private / loopback IPs
+        if (!ip || ip === 'unknown' || /^(127\.|::1|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(ip)) return null;
+        try {
+            const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,countryCode,city,isp`, {
+                signal: AbortSignal.timeout(3000),
+            });
+            const data: any = await res.json();
+            if (data.status !== 'success') return null;
+            const flags: Record<string, string> = { AZ: '🇦🇿', TR: '🇹🇷', RU: '🇷🇺', UA: '🇺🇦', US: '🇺🇸', DE: '🇩🇪', GB: '🇬🇧', FR: '🇫🇷', NL: '🇳🇱' };
+            const flag = flags[data.countryCode] || '🌍';
+            return { flag, city: data.city || '—', country: data.country || '—', isp: data.isp || '—' };
+        } catch {
+            return null;
+        }
+    }
+
+    private formatReferrer(ref: string): string {
+        if (!ref) return '🔗 Birbaşa / bilinmir';
+        try {
+            const host = new URL(ref).hostname.replace(/^www\./, '');
+            const icons: Record<string, string> = {
+                'google.com': '🔍 Google',
+                'instagram.com': '📸 Instagram',
+                'facebook.com': '📘 Facebook',
+                't.me': '💬 Telegram',
+                'twitter.com': '🐦 Twitter',
+                'x.com': '🐦 X (Twitter)',
+                'youtube.com': '▶️ YouTube',
+                'whatsapp.com': '💚 WhatsApp',
+                'linkedin.com': '💼 LinkedIn',
+            };
+            return icons[host] || `🔗 ${host}`;
+        } catch {
+            return `🔗 ${ref.slice(0, 60)}`;
+        }
+    }
+
+    async sendLandingVisit(ip?: string, userAgent?: string, referrer?: string, utm?: Record<string, string>): Promise<void> {
         if (!this.isConfigured) return;
         this.landingVisitCount++;
         const now = Date.now();
         if (now - this.lastLandingNotif < 5 * 60 * 1000) return; // 5 min cooldown
         this.lastLandingNotif = now;
-        const ua = userAgent ? userAgent.slice(0, 80) : '—';
-        const text = [
-            `👀 <b>Lənding səhifəsinə giriş</b>`,
+
+        const count = this.landingVisitCount;
+        this.landingVisitCount = 0;
+
+        const { browser, os, device } = this.parseUA(userAgent || '');
+        const geo = await this.geoLookup(ip || '');
+        const refLine = this.formatReferrer(referrer || '');
+
+        const utmLines: string[] = [];
+        if (utm && Object.keys(utm).length > 0) {
+            if (utm.utm_source)   utmLines.push(`📣 Mənbə: ${utm.utm_source}`);
+            if (utm.utm_medium)   utmLines.push(`📡 Kanal: ${utm.utm_medium}`);
+            if (utm.utm_campaign) utmLines.push(`🎯 Kampaniya: ${utm.utm_campaign}`);
+        }
+
+        const lines = [
+            `👀 <b>Yeni lənding ziyarəti</b>`,
             ``,
-            `🌐 IP: <code>${ip || '—'}</code>`,
-            `📱 Agent: <i>${ua}</i>`,
-            `🔢 Son 5 dəqiqədə: <b>${this.landingVisitCount}</b> ziyarət`,
-        ].join('\n');
+            geo
+                ? `${geo.flag} ${geo.city}, ${geo.country} | <i>${geo.isp}</i>`
+                : `🌐 IP: <code>${ip || '—'}</code>`,
+            geo ? `🌐 IP: <code>${ip}</code>` : null,
+            ``,
+            `${device}  •  🌐 ${browser}  •  💻 ${os}`,
+            ``,
+            `↩️ Gəliş: ${refLine}`,
+            ...utmLines,
+            ``,
+            `🔢 Son 5 dəqiqədə: <b>${count}</b> ziyarət`,
+        ].filter(l => l !== null).join('\n');
+
         try {
             await this.post('sendMessage', {
-                chat_id: this.chatId, text, parse_mode: 'HTML',
+                chat_id: this.chatId, text: lines, parse_mode: 'HTML',
                 disable_web_page_preview: true,
             });
-            this.landingVisitCount = 0;
         } catch (err: any) {
             this.logger.error('Telegram sendLandingVisit failed:', err?.message);
         }
