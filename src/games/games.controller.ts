@@ -37,6 +37,11 @@ export class GamesController {
         return this.gamesService.getHotGames();
     }
 
+    @Get('leaderboard')
+    getLeaderboard() {
+        return this.gamesService.getLeaderboard();
+    }
+
     @Get(':id')
     findOne(@Param('id') id: string) {
         return this.gamesService.findOne(id);

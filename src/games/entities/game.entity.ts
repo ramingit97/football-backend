@@ -160,6 +160,9 @@ export class Game {
     @Column({ type: 'jsonb', default: [] })
     hotNotifiedPlayerIds: string[];
 
+    @Column({ default: 'none' })
+    recurrence: string; // 'none' | 'weekly' | 'biweekly'
+
     @CreateDateColumn()
     createdAt: Date;
 

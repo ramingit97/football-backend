@@ -1003,6 +1003,13 @@ export class GamesService {
             } catch (e) {}
         }
 
+        // Auto-create next game if recurring
+        if (savedGame.recurrence && savedGame.recurrence !== 'none') {
+            this.createRecurringGame(savedGame).catch(e =>
+                console.error('Failed to create recurring game:', e.message)
+            );
+        }
+
         return savedGame;
     }
 
@@ -1085,6 +1092,13 @@ export class GamesService {
             }
         }
 
+        // Auto-create next game if recurring
+        if (game.recurrence && game.recurrence !== 'none') {
+            this.createRecurringGame(game).catch(e =>
+                console.error('Failed to create recurring game:', e.message)
+            );
+        }
+
         console.log(`Game ${game.id} auto-completed. MVPs: A=${game.mvpTeamAId}, B=${game.mvpTeamBId}`);
     }
 
@@ -1152,6 +1166,82 @@ export class GamesService {
             const spotsLeft = game.maxPlayers - (game.players || []).length;
             return spotsLeft >= 1 && spotsLeft <= 3;
         });
+    }
+
+    async getLeaderboard(): Promise<{ topScorers: any[]; topAssists: any[]; topMvp: any[] }> {
+        const topScorers: any[] = await this.statsRepository.query(`
+            SELECT "playerId", SUM(goals) AS goals, SUM(assists) AS assists, COUNT(*) AS games
+            FROM game_player_stats
+            GROUP BY "playerId"
+            HAVING SUM(goals) > 0
+            ORDER BY goals DESC
+            LIMIT 10
+        `);
+
+        const topAssists: any[] = await this.statsRepository.query(`
+            SELECT "playerId", SUM(goals) AS goals, SUM(assists) AS assists, COUNT(*) AS games
+            FROM game_player_stats
+            GROUP BY "playerId"
+            HAVING SUM(assists) > 0
+            ORDER BY assists DESC
+            LIMIT 10
+        `);
+
+        const topMvp: any[] = await this.gamesRepository.query(`
+            SELECT "mvpUserId" AS "playerId", COUNT(*) AS mvp_count
+            FROM game_mvp_awards
+            GROUP BY "mvpUserId"
+            ORDER BY mvp_count DESC
+            LIMIT 10
+        `);
+
+        // Enrich with user names
+        const enrichWithName = async (rows: any[]) => {
+            return Promise.all(rows.map(async (row) => {
+                try {
+                    const user = await this.usersService.findOneById(row.playerId);
+                    return { ...row, name: user?.name || 'Unknown', avatar: user?.avatar || null };
+                } catch { return { ...row, name: 'Unknown', avatar: null }; }
+            }));
+        };
+
+        return {
+            topScorers: await enrichWithName(topScorers),
+            topAssists: await enrichWithName(topAssists),
+            topMvp: await enrichWithName(topMvp),
+        };
+    }
+
+    async createRecurringGame(sourceGame: Game): Promise<Game | null> {
+        if (!sourceGame.recurrence || sourceGame.recurrence === 'none') return null;
+        const daysToAdd = sourceGame.recurrence === 'weekly' ? 7 : 14;
+        const sourceDate = new Date(sourceGame.date);
+        sourceDate.setDate(sourceDate.getDate() + daysToAdd);
+
+        const nextGame = this.gamesRepository.create({
+            title: sourceGame.title,
+            date: sourceDate,
+            time: sourceGame.time,
+            location: sourceGame.location,
+            stadiumId: sourceGame.stadiumId,
+            district: sourceGame.district,
+            metro: sourceGame.metro,
+            maxPlayers: sourceGame.maxPlayers,
+            minPlayers: sourceGame.minPlayers,
+            format: sourceGame.format,
+            skillLevel: sourceGame.skillLevel,
+            duration: sourceGame.duration,
+            gameType: sourceGame.gameType,
+            price: sourceGame.price,
+            organizerId: sourceGame.organizerId,
+            organizerName: sourceGame.organizerName,
+            recurrence: sourceGame.recurrence,
+            status: 'open',
+            gamePhase: 'active',
+        });
+        const saved = await this.gamesRepository.save(nextGame);
+        try { this.telegramService.sendNewGame(saved as any).catch(() => {}); } catch {}
+        return saved;
     }
 
     async sendHotGameNotifications(): Promise<void> {
