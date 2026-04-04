@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThanOrEqual } from 'typeorm';
+import { Repository, MoreThanOrEqual, In } from 'typeorm';
 import { Game } from './entities/game.entity';
 import { GamePlayerStats } from './entities/game-player-stats.entity';
 import { ChatMessage } from './entities/chat-message.entity';
