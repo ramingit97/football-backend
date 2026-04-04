@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, Inject, forwardRef } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, Inject, forwardRef, Logger } from '@nestjs/common';
 import { StadiumsService } from './stadiums.service';
 import { TelegramService } from './telegram.service';
 import { CreateStadiumDto } from './dto/create-stadium.dto';
@@ -8,6 +8,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 
 @Controller('stadiums')
 export class StadiumsController {
+    private readonly logger = new Logger(StadiumsController.name);
+
     constructor(
         private readonly stadiumsService: StadiumsService,
         private readonly telegramService: TelegramService,
@@ -50,6 +52,9 @@ export class StadiumsController {
         const msgId = cb.message?.message_id;
         const msgText = cb.message?.text || '';
 
+        this.logger.log(`[webhook] data="${data}" action="${action}" parts=${JSON.stringify(parts)}`);
+        this.logger.log(`[webhook] gamesService=${this.gamesService ? 'OK' : 'UNDEFINED'}`);
+
         try {
             // ── Phone verification ────────────────────────────────
             if (action === 'phone') {
@@ -72,13 +77,18 @@ export class StadiumsController {
             if (action === 'game') {
                 const subAction = parts[1];
                 const gameId = parts.slice(2).join('_');
+                this.logger.log(`[webhook:game] subAction="${subAction}" gameId="${gameId}"`);
                 if (!gameId) return { ok: true };
 
                 if (subAction === 'approve') {
+                    this.logger.log(`[webhook:game] calling adminApproveGame(${gameId})`);
                     await this.gamesService.adminApproveGame(gameId);
+                    this.logger.log(`[webhook:game] adminApproveGame done`);
                     await this.telegramService.editMessage(chatId, msgId, `${msgText}\n\n✅ <b>TƏSDİQLƏNDİ — oyunçular üçün açıqdır</b>`).catch(() => {});
                 } else if (subAction === 'delete') {
+                    this.logger.log(`[webhook:game] calling adminCancelGame(${gameId})`);
                     await this.gamesService.adminCancelGame(gameId);
+                    this.logger.log(`[webhook:game] adminCancelGame done`);
                     await this.telegramService.editMessage(chatId, msgId, `${msgText}\n\n❌ <b>RƏD EDİLDİ — refund verildi</b>`).catch(() => {});
                 }
                 return { ok: true };
@@ -113,7 +123,8 @@ export class StadiumsController {
                 await this.telegramService.editMessage(chatId, msgId, `${msgText}\n\n❌ <b>RƏD EDİLDİ</b>`).catch(() => {});
             }
         } catch (err) {
-            this.telegramService.sendMessage(chatId, `⚠️ Xəta baş verdi: ${err?.message || 'unknown'}`).catch(() => {});
+            this.logger.error(`[webhook] ERROR: ${err?.message}`, err?.stack);
+            this.telegramService.sendMessage(chatId, `⚠️ Xəta: ${err?.message || 'unknown'}`).catch(() => {});
         }
 
         return { ok: true };
