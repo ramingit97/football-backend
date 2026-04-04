@@ -14,6 +14,7 @@ import { StadiumsService } from '../stadiums/stadiums.service';
 import { BookingsService } from '../bookings/bookings.service';
 import { AchievementsService } from '../achievements/achievements.service';
 import { RatingsService } from '../ratings/ratings.service';
+import { TelegramService } from '../stadiums/telegram.service';
 
 @Injectable()
 export class GamesService {
@@ -36,6 +37,7 @@ export class GamesService {
         private readonly bookingsService: BookingsService,
         private readonly achievementsService: AchievementsService,
         private readonly ratingsService: RatingsService,
+        private readonly telegramService: TelegramService,
     ) {}
 
     async findAll(page = 1, limit = 12, status?: string, format?: string, district?: string, metro?: string) {
@@ -200,6 +202,7 @@ export class GamesService {
 
         const game = this.gamesRepository.create(gameData);
         const savedGame = await this.gamesRepository.save(game);
+        this.telegramService.sendNewGame(savedGame as any).catch(() => {});
 
         if (gameData.stadiumId && gameData.date && gameData.time) {
             try {

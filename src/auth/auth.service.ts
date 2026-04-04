@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as admin from 'firebase-admin';
 import { UsersService } from '../users/users.service';
+import { TelegramService } from '../stadiums/telegram.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
@@ -36,6 +37,7 @@ export class AuthService {
     constructor(
         private usersService: UsersService,
         private jwtService: JwtService,
+        private telegramService: TelegramService,
     ) {
         getAuthApp(this.logger);
     }
@@ -89,6 +91,7 @@ export class AuthService {
             ...registerDto,
             password: hashedPassword,
         });
+        this.telegramService.sendNewUser(user).catch(() => {});
         const payload = { email: user.email, sub: user.id, role: user.role };
         return {
             access_token: this.jwtService.sign(payload),
@@ -125,6 +128,7 @@ export class AuthService {
                 phone: phoneNumber,
                 role: 'player',
             } as any);
+            this.telegramService.sendNewUser(user).catch(() => {});
         }
 
         const payload = { email: user.email, sub: user.id, role: user.role };
@@ -152,6 +156,7 @@ export class AuthService {
                 avatar: decodedToken.picture || null,
                 role: 'player',
             } as any);
+            this.telegramService.sendNewUser(user).catch(() => {});
         } else if (decodedToken.picture && !user.avatar) {
             await this.usersService.update(user.id, { avatar: decodedToken.picture } as any);
             user = await this.usersService.findOneById(user.id);

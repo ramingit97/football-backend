@@ -17,6 +17,7 @@ import { ChallengesModule } from './challenges/challenges.module';
 import { GamesModule } from './games/games.module';
 import { SupportModule } from './support/support.module';
 import { TelegramBotModule } from './telegram-bot/telegram-bot.module';
+import { AnalyticsController } from './analytics/analytics.controller';
 
 import { User } from './users/entities/user.entity';
 import { Transaction } from './users/entities/transaction.entity';
@@ -85,6 +86,8 @@ import { PlayerReport } from './games/entities/player-report.entity';
         GamesModule,
         SupportModule,
         TelegramBotModule,
+        StadiumsModule,
     ],
+    controllers: [AnalyticsController],
 })
 export class AppModule {}

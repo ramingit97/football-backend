@@ -91,6 +91,92 @@ export class TelegramService {
         }
     }
 
+    // ── Landing page visit (debounced — max 1 per 5 min) ─────
+    private lastLandingNotif = 0;
+    private landingVisitCount = 0;
+
+    async sendLandingVisit(ip?: string, userAgent?: string): Promise<void> {
+        if (!this.isConfigured) return;
+        this.landingVisitCount++;
+        const now = Date.now();
+        if (now - this.lastLandingNotif < 5 * 60 * 1000) return; // 5 min cooldown
+        this.lastLandingNotif = now;
+        const ua = userAgent ? userAgent.slice(0, 80) : '—';
+        const text = [
+            `👀 <b>Lənding səhifəsinə giriş</b>`,
+            ``,
+            `🌐 IP: <code>${ip || '—'}</code>`,
+            `📱 Agent: <i>${ua}</i>`,
+            `🔢 Son 5 dəqiqədə: <b>${this.landingVisitCount}</b> ziyarət`,
+        ].join('\n');
+        try {
+            await this.post('sendMessage', {
+                chat_id: this.chatId, text, parse_mode: 'HTML',
+                disable_web_page_preview: true,
+            });
+            this.landingVisitCount = 0;
+        } catch (err: any) {
+            this.logger.error('Telegram sendLandingVisit failed:', err?.message);
+        }
+    }
+
+    // ── New user registered ───────────────────────────────────
+    async sendNewUser(user: { name?: string; email?: string; phone?: string; id?: string; role?: string }): Promise<void> {
+        if (!this.isConfigured) return;
+        const esc = (s: string) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const text = [
+            `🎉 <b>Yeni istifadəçi qeydiyyatdan keçdi!</b>`,
+            ``,
+            `👤 Ad: <b>${esc(user.name || '—')}</b>`,
+            user.email ? `📧 Email: ${esc(user.email)}` : null,
+            user.phone ? `📱 Telefon: ${esc(user.phone)}` : null,
+            `🎭 Rol: ${user.role || 'player'}`,
+            `🆔 <code>${user.id || '—'}</code>`,
+        ].filter(Boolean).join('\n');
+        try {
+            await this.post('sendMessage', {
+                chat_id: this.chatId, text, parse_mode: 'HTML',
+                disable_web_page_preview: true,
+            });
+        } catch (err: any) {
+            this.logger.error('Telegram sendNewUser failed:', err?.message);
+        }
+    }
+
+    // ── New game created ──────────────────────────────────────
+    async sendNewGame(game: {
+        title?: string; date?: string; time?: string;
+        format?: string; maxPlayers?: number; price?: number;
+        location?: string; district?: string; organizerName?: string;
+        skillLevel?: string; isUrgent?: boolean; gameType?: string; id?: string;
+    }): Promise<void> {
+        if (!this.isConfigured) return;
+        const esc = (s: string) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const urgent = game.isUrgent ? '🔥 TƏCİLİ! ' : '';
+        const text = [
+            `⚽ ${urgent}<b>Yeni oyun yaradıldı!</b>`,
+            ``,
+            `🏷 Ad: <b>${esc(game.title || '—')}</b>`,
+            `📅 Tarix: ${game.date || '—'} ${game.time || ''}`,
+            `📍 Yer: ${esc(game.location || '—')}`,
+            game.district ? `🗺 Rayon: ${esc(game.district)}` : null,
+            `⚽ Format: ${game.format || '—'} | 👥 Max: ${game.maxPlayers || '—'}`,
+            `💰 Qiymət: ${game.price ? game.price + ' ₼' : 'Pulsuz'}`,
+            game.skillLevel ? `🎯 Səviyyə: ${game.skillLevel}` : null,
+            `🔒 Növ: ${game.gameType === 'private' ? 'Qapalı' : 'Açıq'}`,
+            `👤 Təşkilatçı: ${esc(game.organizerName || '—')}`,
+            `🆔 <code>${game.id || '—'}</code>`,
+        ].filter(Boolean).join('\n');
+        try {
+            await this.post('sendMessage', {
+                chat_id: this.chatId, text, parse_mode: 'HTML',
+                disable_web_page_preview: true,
+            });
+        } catch (err: any) {
+            this.logger.error('Telegram sendNewGame failed:', err?.message);
+        }
+    }
+
     async sendMessage(chatId: string | number, text: string): Promise<void> {
         if (!this.isConfigured) return;
         try {
