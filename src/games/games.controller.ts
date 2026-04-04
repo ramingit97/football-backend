@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, Query, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Put, Delete, Query, Patch, NotFoundException } from '@nestjs/common';
 import { GamesService } from './games.service';
 import { Game } from './entities/game.entity';
 import { FinishGameDto } from './dto/finish-game.dto';
@@ -48,8 +48,10 @@ export class GamesController {
     }
 
     @Get(':id')
-    findOne(@Param('id') id: string) {
-        return this.gamesService.findOne(id);
+    async findOne(@Param('id') id: string) {
+        const game = await this.gamesService.findOne(id);
+        if (game.status === 'pending') throw new NotFoundException('Game not found');
+        return game;
     }
 
     @Get('team/:teamId')

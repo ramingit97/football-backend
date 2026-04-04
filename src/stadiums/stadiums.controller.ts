@@ -40,97 +40,80 @@ export class StadiumsController {
         const cb = body?.callback_query;
         if (!cb) return { ok: true };
 
+        // Always answer immediately — dismisses Telegram's loading spinner
+        await this.telegramService.answerCallback(cb.id, '⏳').catch(() => {});
+
         const data: string = cb.data || '';
         const parts = data.split('_');
         const action = parts[0];
+        const chatId = cb.message?.chat?.id;
+        const msgId = cb.message?.message_id;
+        const msgText = cb.message?.text || '';
 
-        // ── Phone verification callbacks ─────────────────────────
-        if (action === 'phone') {
-            const subAction = parts[1]; // 'approve' | 'reject'
-            const userId = parts.slice(2).join('_');
-            if (!userId) { await this.telegramService.answerCallback(cb.id, '❓ Bilinməyən əmr'); return { ok: true }; }
+        try {
+            // ── Phone verification ────────────────────────────────
+            if (action === 'phone') {
+                const subAction = parts[1];
+                const userId = parts.slice(2).join('_');
+                if (!userId) return { ok: true };
 
-            if (subAction === 'approve') {
-                const result = await this.usersService.approvePhoneBonus(userId);
-                if (result.success) {
-                    await this.telegramService.answerCallback(cb.id, '✅ Telefon təsdiqləndi, +2 ₼ verildi!');
-                    await this.telegramService.editMessage(cb.message.chat.id, cb.message.message_id, `${cb.message.text}\n\n✅ <b>TƏSDİQLƏNDİ — +2 ₼ verildi</b>`);
-                } else {
-                    await this.telegramService.answerCallback(cb.id, 'ℹ️ Artıq təsdiqlənib');
+                if (subAction === 'approve') {
+                    const result = await this.usersService.approvePhoneBonus(userId);
+                    const label = result.success ? '✅ TƏSDİQLƏNDİ — +2 ₼ verildi' : 'ℹ️ Artıq təsdiqlənib';
+                    await this.telegramService.editMessage(chatId, msgId, `${msgText}\n\n<b>${label}</b>`).catch(() => {});
+                } else if (subAction === 'reject') {
+                    await this.usersService.rejectPhone(userId);
+                    await this.telegramService.editMessage(chatId, msgId, `${msgText}\n\n❌ <b>RƏD EDİLDİ</b>`).catch(() => {});
                 }
-            } else if (subAction === 'reject') {
-                await this.usersService.rejectPhone(userId);
-                await this.telegramService.answerCallback(cb.id, '❌ Nömrə rədd edildi');
-                await this.telegramService.editMessage(cb.message.chat.id, cb.message.message_id, `${cb.message.text}\n\n❌ <b>RƏD EDİLDİ</b>`);
+                return { ok: true };
             }
-            return { ok: true };
-        }
 
-        // ── Game approve / delete callbacks ───────────────────────
-        if (action === 'game') {
-            const subAction = parts[1]; // 'approve' | 'delete'
-            const gameId = parts.slice(2).join('_');
-            if (subAction === 'approve' && gameId) {
-                await this.gamesService.adminApproveGame(gameId);
-                await this.telegramService.answerCallback(cb.id, '✅ Oyun təsdiqləndi, oyunçular görə bilər!');
-                await this.telegramService.editMessage(
-                    cb.message.chat.id, cb.message.message_id,
-                    `${cb.message.text}\n\n✅ <b>TƏSDİQLƏNDİ — oyunçular üçün açıqdır</b>`,
-                );
-            } else if (subAction === 'delete' && gameId) {
-                await this.gamesService.adminCancelGame(gameId);
-                await this.telegramService.answerCallback(cb.id, '❌ Oyun rədd edildi, refund göndərildi');
-                await this.telegramService.editMessage(
-                    cb.message.chat.id, cb.message.message_id,
-                    `${cb.message.text}\n\n❌ <b>RƏD EDİLDİ — refund verildi (admin tərəfindən)</b>`,
-                );
+            // ── Game approve / reject ─────────────────────────────
+            if (action === 'game') {
+                const subAction = parts[1];
+                const gameId = parts.slice(2).join('_');
+                if (!gameId) return { ok: true };
+
+                if (subAction === 'approve') {
+                    await this.gamesService.adminApproveGame(gameId);
+                    await this.telegramService.editMessage(chatId, msgId, `${msgText}\n\n✅ <b>TƏSDİQLƏNDİ — oyunçular üçün açıqdır</b>`).catch(() => {});
+                } else if (subAction === 'delete') {
+                    await this.gamesService.adminCancelGame(gameId);
+                    await this.telegramService.editMessage(chatId, msgId, `${msgText}\n\n❌ <b>RƏD EDİLDİ — refund verildi</b>`).catch(() => {});
+                }
+                return { ok: true };
             }
-            return { ok: true };
-        }
 
-        // ── Avatar block callback ─────────────────────────────────
-        if (action === 'avatar') {
-            const subAction = parts[1]; // 'block'
-            const userId = parts.slice(2).join('_');
-            if (subAction === 'block' && userId) {
-                await this.usersService.update(userId, { avatar: null } as any);
-                this.notificationsService.sendNotification(
-                    userId, 'SYSTEM',
-                    '🚫 Profil şəkliniz silindi',
-                    'Profil şəkliniz qaydaları pozduğu üçün admin tərəfindən silindi. Zəhmət olmasa uyğun bir şəkil yükləyin.',
-                ).catch(() => {});
-                await this.telegramService.answerCallback(cb.id, '🚫 Avatar silindi, istifadəçiyə bildiriş göndərildi');
-                await this.telegramService.editMessageCaption(
-                    cb.message.chat.id, cb.message.message_id,
-                    `${cb.message.caption || ''}\n\n🚫 <b>AVATAR SİLİNDİ (admin tərəfindən)</b>`,
-                );
+            // ── Avatar block ──────────────────────────────────────
+            if (action === 'avatar') {
+                const subAction = parts[1];
+                const userId = parts.slice(2).join('_');
+                if (subAction === 'block' && userId) {
+                    await this.usersService.update(userId, { avatar: null } as any);
+                    this.notificationsService.sendNotification(
+                        userId, 'SYSTEM',
+                        '🚫 Profil şəkliniz silindi',
+                        'Profil şəkliniz qaydaları pozduğu üçün admin tərəfindən silindi.',
+                    ).catch(() => {});
+                    await this.telegramService.editMessageCaption(chatId, msgId,
+                        `${cb.message?.caption || ''}\n\n🚫 <b>AVATAR SİLİNDİ</b>`).catch(() => {});
+                }
+                return { ok: true };
             }
-            return { ok: true };
-        }
 
-        // ── Stadium approval callbacks ────────────────────────────
-        const stadiumId = parts[1];
-        if (!stadiumId) {
-            await this.telegramService.answerCallback(cb.id, '❓ Bilinməyən əmr');
-            return { ok: true };
-        }
+            // ── Stadium approve / reject ──────────────────────────
+            const stadiumId = parts[1];
+            if (!stadiumId) return { ok: true };
 
-        if (action === 'approve') {
-            await this.stadiumsService.approve(stadiumId, 'telegram-admin');
-            await this.telegramService.answerCallback(cb.id, '✅ Stadion təsdiq edildi!');
-            await this.telegramService.editMessage(
-                cb.message.chat.id,
-                cb.message.message_id,
-                `${cb.message.text}\n\n✅ <b>TƏSDİQ EDİLDİ</b>`,
-            );
-        } else if (action === 'reject') {
-            await this.stadiumsService.reject(stadiumId, 'Telegram vasitəsilə rədd edildi');
-            await this.telegramService.answerCallback(cb.id, '❌ Stadion rədd edildi');
-            await this.telegramService.editMessage(
-                cb.message.chat.id,
-                cb.message.message_id,
-                `${cb.message.text}\n\n❌ <b>RƏD EDİLDİ</b>`,
-            );
+            if (action === 'approve') {
+                await this.stadiumsService.approve(stadiumId, 'telegram-admin');
+                await this.telegramService.editMessage(chatId, msgId, `${msgText}\n\n✅ <b>TƏSDİQ EDİLDİ</b>`).catch(() => {});
+            } else if (action === 'reject') {
+                await this.stadiumsService.reject(stadiumId, 'Telegram vasitəsilə rədd edildi');
+                await this.telegramService.editMessage(chatId, msgId, `${msgText}\n\n❌ <b>RƏD EDİLDİ</b>`).catch(() => {});
+            }
+        } catch (err) {
+            this.telegramService.sendMessage(chatId, `⚠️ Xəta baş verdi: ${err?.message || 'unknown'}`).catch(() => {});
         }
 
         return { ok: true };
