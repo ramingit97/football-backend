@@ -27,7 +27,7 @@ import { RatingsModule } from '../ratings/ratings.module';
         UsersModule,
         NotificationsModule,
         PaymentsModule,
-        StadiumsModule,
+        forwardRef(() => StadiumsModule),
         BookingsModule,
         AchievementsModule,
         RatingsModule,

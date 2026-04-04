@@ -180,6 +180,12 @@ export class User {
     @Column({ default: false })
     referralBonusPaid: boolean;
 
+    @Column({ default: false })
+    phoneBonusPaid: boolean;
+
+    @Column({ nullable: true })
+    phoneVerificationRequestedAt: Date;
+
     @CreateDateColumn()
     createdAt: Date;
 

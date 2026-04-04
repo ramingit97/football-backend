@@ -38,6 +38,9 @@ export class Stadium {
     @Column({ nullable: true })
     stadiumLink: string;
 
+    @Column({ nullable: true })
+    contactPhone: string;
+
     @Column('simple-array', { nullable: true })
     amenities: string[];
 

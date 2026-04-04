@@ -12,10 +12,16 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { FilesService } from './files.service';
+import { TelegramService } from '../stadiums/telegram.service';
+import { UsersService } from '../users/users.service';
 
 @Controller('files')
 export class FilesController {
-    constructor(private readonly filesService: FilesService) { }
+    constructor(
+        private readonly filesService: FilesService,
+        private readonly telegramService: TelegramService,
+        private readonly usersService: UsersService,
+    ) { }
 
     // Upload single stadium image
     @Post('stadium/:stadiumId')
@@ -77,7 +83,15 @@ export class FilesController {
         if (!file) {
             throw new BadRequestException('No file uploaded');
         }
-        return this.filesService.uploadUserAvatar(file, userId);
+        const result = await this.filesService.uploadUserAvatar(file, userId);
+        // Notify admin for moderation — fetch user info for context (fire-and-forget)
+        this.usersService.findOneById(userId).then(user => {
+            this.telegramService.sendAvatarUpload(
+                { id: userId, name: user?.name, email: user?.email },
+                result.url,
+            ).catch(() => {});
+        }).catch(() => {});
+        return result;
     }
 
     // Upload team flag

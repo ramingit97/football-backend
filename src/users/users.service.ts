@@ -4,6 +4,7 @@ import { Repository, ILike, DataSource, In } from 'typeorm';
 import { User } from './entities/user.entity';
 import { Transaction } from './entities/transaction.entity';
 import { Friendship } from './entities/friendship.entity';
+import { SupportTicket } from '../support/entities/support-ticket.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
@@ -15,6 +16,8 @@ export class UsersService {
         private transactionsRepository: Repository<Transaction>,
         @InjectRepository(Friendship)
         private friendshipsRepository: Repository<Friendship>,
+        @InjectRepository(SupportTicket)
+        private supportTicketRepo: Repository<SupportTicket>,
         private dataSource: DataSource,
         @Inject(forwardRef(() => NotificationsService))
         private readonly notificationsService: NotificationsService,
@@ -44,10 +47,11 @@ export class UsersService {
         return code;
     }
 
-    async create(userData: Partial<User>): Promise<User> {
-        const user = this.usersRepository.create(userData);
-        // Welcome Bonus: 1 AZN (balanced bonus system)
-        user.balance = 1.00;
+    async create(userData: Partial<User> & { initialBalance?: number }): Promise<User> {
+        const { initialBalance, ...rest } = userData as any;
+        const user = this.usersRepository.create(rest as Partial<User>);
+        // Welcome Bonus: default 1 AZN, can be overridden (e.g. Google gets 3 AZN)
+        user.balance = initialBalance ?? 1.00;
         // Auto-generate unique referral code
         let referralCode = this.generateReferralCode();
         // Ensure uniqueness
@@ -893,6 +897,102 @@ export class UsersService {
         await this.usersRepository.save(user);
 
         return { paid: true };
+    }
+
+    // ============= PHONE VERIFICATION BONUS =============
+
+    private isAzerbaijaniPhone(phone: string): boolean {
+        return /^(\+994|994)(10|40|50|51|55|60|70|77|99)\d{7}$/.test(phone.replace(/\s/g, ''));
+    }
+
+    async markPhoneVerificationPending(userId: string): Promise<'auto_format' | 'pending'> {
+        const user = await this.findOneById(userId);
+        if (!user || user.phoneBonusPaid) return 'pending';
+
+        user.phoneVerificationRequestedAt = new Date();
+        await this.usersRepository.save(user);
+
+        // Return whether it's an AZ-format number (affects Telegram message style)
+        if (user.phone && this.isAzerbaijaniPhone(user.phone)) {
+            return 'auto_format';
+        }
+        return 'pending';
+    }
+
+    async approvePhoneBonus(userId: string): Promise<{ success: boolean }> {
+        const user = await this.findOneById(userId);
+        if (!user || user.phoneBonusPaid) return { success: false };
+
+        user.balance = (user.balance || 0) + 2;
+        user.phoneBonusPaid = true;
+        user.phoneVerificationRequestedAt = null;
+        await this.usersRepository.save(user);
+
+        const notifMsg = 'Nömrəniz təsdiqləndi. Hesabınıza +2 ₼ bonus əlavə edildi.';
+        try {
+            await this.notificationsService.sendNotification(
+                userId, 'SYSTEM',
+                '📱 Telefon təsdiqləndi!',
+                notifMsg,
+            );
+        } catch {}
+
+        // Create support ticket so user sees it in the app
+        try {
+            await this.supportTicketRepo.save(this.supportTicketRepo.create({
+                userId,
+                userName: user.name || '—',
+                userEmail: user.email,
+                message: '📱 Telefon nömrəniz uğurla təsdiqləndi. Hesabınıza +2 ₼ bonus əlavə edildi.',
+                status: 'replied',
+                reply: 'Hesabınıza +2 ₼ bonus köçürüldü. Təşəkkür edirik!',
+            }));
+        } catch {}
+
+        return { success: true };
+    }
+
+    async rejectPhone(userId: string): Promise<void> {
+        const user = await this.findOneById(userId);
+        if (!user) return;
+
+        user.phoneVerificationRequestedAt = null;
+        await this.usersRepository.save(user);
+
+        const notifMsg = 'Daxil etdiyiniz nömrə doğrulanamadı. Zəhmət olmasa profil parametrlərindən düzgün nömrəni daxil edin.';
+        try {
+            await this.notificationsService.sendNotification(
+                userId, 'SYSTEM',
+                '❌ Telefon təsdiqlənmədi',
+                notifMsg,
+            );
+        } catch {}
+
+        // Create support ticket so user sees it in the app
+        try {
+            await this.supportTicketRepo.save(this.supportTicketRepo.create({
+                userId,
+                userName: user.name || '—',
+                userEmail: user.email,
+                message: '❌ Telefon nömrəniz təsdiqlənmədi.',
+                status: 'replied',
+                reply: 'Daxil etdiyiniz nömrə doğrulanamadı. Profil parametrlərindən düzgün Azərbaycan nömrəsini daxil edin.',
+            }));
+        } catch {}
+    }
+
+    async autoApproveExpiredPhoneVerifications(): Promise<void> {
+        const cutoff = new Date(Date.now() - 30 * 60 * 1000); // 30 min ago
+        const pending = await this.usersRepository
+            .createQueryBuilder('u')
+            .where('u.phoneVerificationRequestedAt IS NOT NULL')
+            .andWhere('u.phoneVerificationRequestedAt < :cutoff', { cutoff })
+            .andWhere('u.phoneBonusPaid = false')
+            .getMany();
+
+        for (const user of pending) {
+            await this.approvePhoneBonus(user.id);
+        }
     }
 }
 

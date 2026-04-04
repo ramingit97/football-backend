@@ -42,6 +42,11 @@ export class GamesController {
         return this.gamesService.getLeaderboard();
     }
 
+    @Get('user/:userId')
+    findByUser(@Param('userId') userId: string) {
+        return this.gamesService.findByUser(userId);
+    }
+
     @Get(':id')
     findOne(@Param('id') id: string) {
         return this.gamesService.findOne(id);

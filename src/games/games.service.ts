@@ -42,7 +42,13 @@ export class GamesService {
 
     async findAll(page = 1, limit = 12, status?: string, format?: string, district?: string, metro?: string) {
         const where: any = {};
-        if (status) where.status = status;
+        // Never show pending games in public listing; if a specific status is requested use it
+        if (status) {
+            where.status = status;
+        } else {
+            // Exclude pending — only approved (open/full) games visible to players
+            where.status = In(['open', 'full']);
+        }
         if (format) where.format = format;
         if (district) where.district = district;
         if (metro) where.metro = metro;
@@ -169,6 +175,18 @@ export class GamesService {
         console.log(`[${notification.type}] game ${game.id} (skill: ${gameSkill}): notified ${notifiedIds.length} players`);
     }
 
+    // Returns all games for a user (as organizer or player) including pending — for profile page
+    async findByUser(userId: string): Promise<Game[]> {
+        const allGames = await this.gamesRepository.find({
+            order: { date: 'DESC' },
+            relations: ['stats'],
+        });
+        return allGames.filter(g =>
+            g.organizerId === userId ||
+            (Array.isArray(g.players) && g.players.some((p: any) => p.id === userId))
+        );
+    }
+
     async findOne(id: string): Promise<Game> {
         const game = await this.gamesRepository.findOne({ where: { id }, relations: ['stats'] });
         if (!game) throw new NotFoundException(`Game with ID ${id} not found`);
@@ -200,7 +218,7 @@ export class GamesService {
             }
         }
 
-        const game = this.gamesRepository.create(gameData);
+        const game = this.gamesRepository.create({ ...gameData, status: 'pending' });
         const savedGame = await this.gamesRepository.save(game);
         this.telegramService.sendNewGame(savedGame as any).catch(() => {});
 
@@ -301,6 +319,51 @@ export class GamesService {
         }
 
         return saved;
+    }
+
+    // Admin-only approve: pending → open, notify organizer
+    async adminApproveGame(gameId: string): Promise<void> {
+        const game = await this.findOne(gameId);
+        if (!game || game.status !== 'pending') return;
+
+        game.status = 'open';
+        await this.gamesRepository.save(game);
+
+        try {
+            await this.notificationsService.sendNotification(
+                game.organizerId, 'GAME_APPROVED',
+                '✅ Oyununuz təsdiqləndi!',
+                `"${game.title}" oyununuz adminlər tərəfindən təsdiqləndi və indi oyunçular üçün görünür.`,
+                undefined,
+                { gameId: game.id },
+            );
+        } catch {}
+    }
+
+    // Admin-only cancel: bypasses organizer check, still refunds + notifies
+    async adminCancelGame(gameId: string): Promise<void> {
+        const game = await this.findOne(gameId);
+        if (!game || game.status === 'cancelled' || game.status === 'finished') return;
+
+        game.status = 'cancelled';
+        if (game.bookingId) {
+            try { await this.bookingsService.updateStatus(game.bookingId, 'cancelled'); } catch {}
+        }
+        game.bookingStatus = 'cancelled';
+        await this.gamesRepository.save(game);
+
+        for (const player of game.players) {
+            try {
+                await this.paymentsService.refundToWallet(player.id, 0.50);
+                await this.notificationsService.sendNotification(
+                    player.id, 'GAME_CANCELLED',
+                    'Oyun ləğv edildi',
+                    `${game.title} admin tərəfindən ləğv edildi. 0.50 ₼ qaytarıldı.`,
+                    undefined,
+                    { gameId: game.id },
+                );
+            } catch {}
+        }
     }
 
     async joinGame(gameId: string, player: any, referredBy?: string): Promise<Game> {

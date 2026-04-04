@@ -54,8 +54,9 @@ export class TelegramService {
             `<b>Qiymət:</b> ${stadium.pricePerHour} ₼/saat`,
             `<b>İş saatları:</b> ${stadium.openTime} – ${stadium.closeTime}`,
             `<b>Şəraiti:</b> ${esc(amenitiesText)}`,
-            stadium.description ? `<b>Açıqlama:</b> ${esc(stadium.description)}` : null,
-            stadium.stadiumLink ? `<b>Google Maps:</b> ${esc(stadium.stadiumLink)}` : null,
+            stadium.description  ? `<b>Açıqlama:</b> ${esc(stadium.description)}`    : null,
+            stadium.stadiumLink  ? `<b>Google Maps:</b> ${esc(stadium.stadiumLink)}`   : null,
+            stadium.contactPhone ? `📞 <b>Əlaqə nömrəsi:</b> <code>${esc(stadium.contactPhone)}</code>` : null,
             ``,
             `👤 <b>Göndərən:</b> ${esc(submitterName)}`,
             `🆔 <code>${stadium.id}</code>`,
@@ -205,16 +206,91 @@ export class TelegramService {
         }
     }
 
-    // ── New user registered ───────────────────────────────────
-    async sendNewUser(user: { name?: string; email?: string; phone?: string; id?: string; role?: string }): Promise<void> {
+    async sendRegistrationStarted(ip?: string, userAgent?: string): Promise<void> {
+        if (!this.isConfigured) return;
+        const { browser, os, device } = this.parseUA(userAgent || '');
+        const geo = await this.geoLookup(ip || '');
+        const lines = [
+            `📝 <b>Qeydiyyat başlandı</b>`,
+            ``,
+            geo
+                ? `${geo.flag} ${geo.city}, ${geo.country} | <i>${geo.isp}</i>\n🌐 IP: <code>${ip}</code>`
+                : `🌐 IP: <code>${ip || '—'}</code>`,
+            ``,
+            `${device}  •  🌐 ${browser}  •  💻 ${os}`,
+            ``,
+            `⏳ Qeydiyyatı tamamlayıb-tamamlamadığını gözlə...`,
+        ].filter(Boolean).join('\n');
+        try {
+            await this.post('sendMessage', { chat_id: this.chatId, text: lines, parse_mode: 'HTML', disable_web_page_preview: true });
+        } catch (err: any) {
+            this.logger.error('Telegram sendRegistrationStarted failed:', err?.message);
+        }
+    }
+
+    async sendRegistrationCompleted(ip?: string, userAgent?: string, data?: {
+        name?: string; email?: string; phone?: string; position?: string; playStyle?: string;
+    }): Promise<void> {
         if (!this.isConfigured) return;
         const esc = (s: string) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const { browser, os, device } = this.parseUA(userAgent || '');
+        const geo = await this.geoLookup(ip || '');
+
+        const positionLabels: Record<string, string> = {
+            goalkeeper: '🧤 Qapıçı', defender: '🛡 Müdafiəçi',
+            midfielder: '⚙️ Yarımmüdafiəçi', forward: '⚡ Hücumçu', any: '🌐 Fərq etməz',
+        };
+        const playStyleLabels: Record<string, string> = {
+            technical: '🎯 Texniki', physical: '💪 Fiziki',
+            tactical: '🧠 Taktiki', aggressive: '🔥 Aqressiv',
+        };
+
+        const lines = [
+            `✅ <b>Qeydiyyat tamamlandı!</b>`,
+            ``,
+            data?.name  ? `👤 Ad: <b>${esc(data.name)}</b>` : null,
+            data?.email && !data.email.includes('@phone.auth') ? `📧 Email: ${esc(data.email)}` : null,
+            data?.phone ? `📱 Telefon: <code>${esc(data.phone)}</code>` : null,
+            data?.position  ? `⚽ Mövqe: ${positionLabels[data.position]  || esc(data.position)}`  : null,
+            data?.playStyle ? `🎮 Oyun tərzi: ${playStyleLabels[data.playStyle] || esc(data.playStyle)}` : null,
+            ``,
+            geo
+                ? `${geo.flag} ${geo.city}, ${geo.country} | <i>${geo.isp}</i>\n🌐 IP: <code>${ip}</code>`
+                : `🌐 IP: <code>${ip || '—'}</code>`,
+            `${device}  •  🌐 ${browser}  •  💻 ${os}`,
+        ].filter(Boolean).join('\n');
+        try {
+            await this.post('sendMessage', { chat_id: this.chatId, text: lines, parse_mode: 'HTML', disable_web_page_preview: true });
+        } catch (err: any) {
+            this.logger.error('Telegram sendRegistrationCompleted failed:', err?.message);
+        }
+    }
+
+    // ── New user registered ───────────────────────────────────
+    async sendNewUser(user: {
+        name?: string; email?: string; phone?: string;
+        id?: string; role?: string; position?: string; playStyle?: string;
+    }): Promise<void> {
+        if (!this.isConfigured) return;
+        const esc = (s: string) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        const positionLabels: Record<string, string> = {
+            goalkeeper: '🧤 Qapıçı', defender: '🛡 Müdafiəçi',
+            midfielder: '⚙️ Yarımmüdafiəçi', forward: '⚡ Hücumçu', any: '🌐 Fərq etməz',
+        };
+        const playStyleLabels: Record<string, string> = {
+            technical: '🎯 Texniki', physical: '💪 Fiziki',
+            tactical: '🧠 Taktiki', aggressive: '🔥 Aqressiv',
+        };
+
         const text = [
             `🎉 <b>Yeni istifadəçi qeydiyyatdan keçdi!</b>`,
             ``,
             `👤 Ad: <b>${esc(user.name || '—')}</b>`,
-            user.email ? `📧 Email: ${esc(user.email)}` : null,
-            user.phone ? `📱 Telefon: ${esc(user.phone)}` : null,
+            user.email && !user.email.includes('@phone.auth') ? `📧 Email: ${esc(user.email)}` : null,
+            user.phone ? `📱 Telefon: <code>${esc(user.phone)}</code>` : null,
+            user.position ? `⚽ Mövqe: ${positionLabels[user.position] || esc(user.position)}` : null,
+            user.playStyle ? `🎮 Oyun tərzi: ${playStyleLabels[user.playStyle] || esc(user.playStyle)}` : null,
             `🎭 Rol: ${user.role || 'player'}`,
             `🆔 <code>${user.id || '—'}</code>`,
         ].filter(Boolean).join('\n');
@@ -256,9 +332,79 @@ export class TelegramService {
             await this.post('sendMessage', {
                 chat_id: this.chatId, text, parse_mode: 'HTML',
                 disable_web_page_preview: true,
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '✅ Təsdiqlə',  callback_data: `game_approve_${game.id}` },
+                        { text: '❌ Rədd et',   callback_data: `game_delete_${game.id}` },
+                    ]],
+                },
             });
         } catch (err: any) {
             this.logger.error('Telegram sendNewGame failed:', err?.message);
+        }
+    }
+
+    async sendAvatarUpload(user: { id: string; name?: string; email?: string }, avatarUrl: string): Promise<void> {
+        if (!this.isConfigured) return;
+        const esc = (s: string) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const caption = [
+            `🖼 <b>Yeni profil şəkli</b>`,
+            ``,
+            `👤 ${esc(user.name || '—')}`,
+            user.email && !user.email.includes('@phone.auth') ? `📧 ${esc(user.email)}` : null,
+            `🆔 <code>${user.id}</code>`,
+        ].filter(Boolean).join('\n');
+        try {
+            await this.post('sendPhoto', {
+                chat_id: this.chatId,
+                photo: avatarUrl,
+                caption,
+                parse_mode: 'HTML',
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '🚫 Avatarı sil', callback_data: `avatar_block_${user.id}` },
+                    ]],
+                },
+            });
+        } catch (err: any) {
+            this.logger.error('Telegram sendAvatarUpload failed:', err?.message);
+        }
+    }
+
+    async sendPhoneVerification(user: { id: string; name?: string; phone?: string; email?: string }, isAutoFormat = false): Promise<void> {
+        if (!this.isConfigured) return;
+        const esc = (s: string) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const text = [
+            `📱 <b>Telefon nömrəsi yoxlanması</b>`,
+            ``,
+            `👤 İstifadəçi: <b>${esc(user.name || '—')}</b>`,
+            user.email && !user.email.includes('@phone.auth') ? `📧 ${esc(user.email)}` : null,
+            `📞 Nömrə: <code>${esc(user.phone || '—')}</code>`,
+            `🆔 <code>${user.id}</code>`,
+            ``,
+            isAutoFormat
+                ? `🤖 AZ formatı — 30 dəq sonra <b>avtomatik təsdiqlənəcək</b>. Yalnız rədd etmək istəsəniz basın:`
+                : `Nömrəni yoxlayın:`,
+        ].filter(Boolean).join('\n');
+
+        const replyMarkup = {
+            inline_keyboard: [isAutoFormat
+                ? [{ text: '❌ Rədd et (ləğv et)', callback_data: `phone_reject_${user.id}` }]
+                : [
+                    { text: '✅ Təsdiqlə (+2 ₼)', callback_data: `phone_approve_${user.id}` },
+                    { text: '❌ Rədd et',         callback_data: `phone_reject_${user.id}` },
+                ]
+            ],
+        };
+
+        try {
+            await this.post('sendMessage', {
+                chat_id: this.chatId, text, parse_mode: 'HTML',
+                reply_markup: replyMarkup,
+                disable_web_page_preview: true,
+            });
+        } catch (err: any) {
+            this.logger.error('Telegram sendPhoneVerification failed:', err?.message);
         }
     }
 
@@ -300,6 +446,20 @@ export class TelegramService {
             });
         } catch (err: any) {
             this.logger.error('Telegram editMessage failed:', err?.message);
+        }
+    }
+
+    async editMessageCaption(chatId: string | number, messageId: number, caption: string): Promise<void> {
+        if (!this.isConfigured) return;
+        try {
+            await this.post('editMessageCaption', {
+                chat_id: chatId,
+                message_id: messageId,
+                caption,
+                parse_mode: 'HTML',
+            });
+        } catch (err: any) {
+            this.logger.error('Telegram editMessageCaption failed:', err?.message);
         }
     }
 }

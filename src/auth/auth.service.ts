@@ -155,6 +155,7 @@ export class AuthService {
                 name: decodedToken.name || email.split('@')[0],
                 avatar: decodedToken.picture || null,
                 role: 'player',
+                initialBalance: 3, // Google users are pre-verified — 3 AZN bonus
             } as any);
             this.telegramService.sendNewUser(user).catch(() => {});
         } else if (decodedToken.picture && !user.avatar) {
@@ -180,6 +181,21 @@ export class AuthService {
     }
 
     async updateUserProfile(userId: string, updateData: any) {
-        return this.usersService.update(userId, updateData);
+        const before = await this.usersService.findOneById(userId);
+        const updated = await this.usersService.update(userId, updateData);
+
+        // If a new phone was set and bonus not yet paid, trigger verification
+        if (updateData.phone && updateData.phone !== before?.phone && !before?.phoneBonusPaid) {
+            const status = await this.usersService.markPhoneVerificationPending(userId);
+            // Always send to Telegram; auto_format = AZ number (30-min auto-approve), pending = manual review
+            this.telegramService.sendPhoneVerification({
+                id: userId,
+                name: updated.name,
+                phone: updateData.phone,
+                email: updated.email,
+            }, status === 'auto_format').catch(() => {});
+        }
+
+        return updated;
     }
 }
