@@ -18,6 +18,7 @@ import { StadiumsModule } from '../stadiums/stadiums.module';
 import { BookingsModule } from '../bookings/bookings.module';
 import { AchievementsModule } from '../achievements/achievements.module';
 import { RatingsModule } from '../ratings/ratings.module';
+import { GameReminderModule } from '../game-reminder/game-reminder.module';
 
 @Module({
     imports: [
@@ -31,6 +32,7 @@ import { RatingsModule } from '../ratings/ratings.module';
         BookingsModule,
         AchievementsModule,
         RatingsModule,
+        GameReminderModule,
     ],
     controllers: [GamesController],
     providers: [GamesService, GamesGateway, HotNotificationsCron],

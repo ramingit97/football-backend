@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
 
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -17,6 +18,7 @@ import { ChallengesModule } from './challenges/challenges.module';
 import { GamesModule } from './games/games.module';
 import { SupportModule } from './support/support.module';
 import { TelegramBotModule } from './telegram-bot/telegram-bot.module';
+import { GameReminderModule } from './game-reminder/game-reminder.module';
 import { AnalyticsController } from './analytics/analytics.controller';
 
 import { User } from './users/entities/user.entity';
@@ -44,6 +46,17 @@ import { PlayerReport } from './games/entities/player-report.entity';
 @Module({
     imports: [
         ConfigModule.forRoot({ isGlobal: true }),
+        BullModule.forRootAsync({
+            imports: [ConfigModule],
+            useFactory: (configService: ConfigService) => ({
+                connection: {
+                    host:     configService.get<string>('REDIS_HOST', 'localhost'),
+                    port:     configService.get<number>('REDIS_PORT', 6379),
+                    password: configService.get<string>('REDIS_PASSWORD') || undefined,
+                },
+            }),
+            inject: [ConfigService],
+        }),
         TypeOrmModule.forRootAsync({
             imports: [ConfigModule],
             useFactory: (configService: ConfigService) => ({
@@ -86,7 +99,7 @@ import { PlayerReport } from './games/entities/player-report.entity';
         GamesModule,
         SupportModule,
         TelegramBotModule,
-        StadiumsModule,
+        GameReminderModule,
     ],
     controllers: [AnalyticsController],
 })

@@ -15,6 +15,7 @@ import { BookingsService } from '../bookings/bookings.service';
 import { AchievementsService } from '../achievements/achievements.service';
 import { RatingsService } from '../ratings/ratings.service';
 import { TelegramService } from '../stadiums/telegram.service';
+import { GameReminderProducer } from '../game-reminder/game-reminder.producer';
 
 @Injectable()
 export class GamesService {
@@ -38,6 +39,7 @@ export class GamesService {
         private readonly achievementsService: AchievementsService,
         private readonly ratingsService: RatingsService,
         private readonly telegramService: TelegramService,
+        private readonly gameReminderProducer: GameReminderProducer,
     ) {}
 
     async findAll(page = 1, limit = 12, status?: string, format?: string, district?: string, metro?: string) {
@@ -272,6 +274,12 @@ export class GamesService {
             },
         }, true).catch(e => console.error('Failed to send new-game notifications:', e.message));
 
+        // Планируем напоминание за 1 час до игры
+        const gameDateStr = new Date(savedGame.date as any).toISOString().slice(0, 10);
+        this.gameReminderProducer
+            .scheduleReminder(savedGame.id, gameDateStr, savedGame.time)
+            .catch(e => console.error('Failed to schedule game reminder:', e.message));
+
         return savedGame;
     }
 
@@ -301,6 +309,9 @@ export class GamesService {
 
         const saved = await this.gamesRepository.save(game);
 
+        // Отменяем запланированное напоминание
+        this.gameReminderProducer.cancelReminder(game.id).catch(() => {});
+
         // Refund all participants and notify
         for (const player of game.players) {
             if (player.id === organizerId) continue;
@@ -321,7 +332,7 @@ export class GamesService {
         return saved;
     }
 
-    // Admin-only approve: pending → open, notify organizer
+    // Admin-only approve: pending → open, notify organizer + all players
     async adminApproveGame(gameId: string): Promise<void> {
         const game = await this.findOne(gameId);
         if (!game || game.status !== 'pending') return;
@@ -329,15 +340,26 @@ export class GamesService {
         game.status = 'open';
         await this.gamesRepository.save(game);
 
-        try {
-            await this.notificationsService.sendNotification(
-                game.organizerId, 'GAME_APPROVED',
-                '✅ Oyununuz təsdiqləndi!',
-                `"${game.title}" oyununuz adminlər tərəfindən təsdiqləndi və indi oyunçular üçün görünür.`,
-                undefined,
-                { gameId: game.id },
-            );
-        } catch {}
+        const dateStr = new Date(game.date as any).toISOString().slice(0, 10);
+        const notifTitle   = '✅ Oyun təsdiqləndi!';
+        const notifMessage = `"${game.title}" — ${dateStr} tarixində ${game.time}-də, ${game.location}. Hazır olun! ⚽`;
+
+        // Уведомить всех игроков которые уже в игре (включая организатора)
+        const players: { id: string }[] = game.players || [];
+        const playerIds = new Set(players.map(p => p.id));
+        playerIds.add(game.organizerId); // организатор всегда получает
+
+        await Promise.all(
+            [...playerIds].map(userId =>
+                this.notificationsService.sendNotification(
+                    userId, 'GAME_APPROVED',
+                    notifTitle,
+                    notifMessage,
+                    undefined,
+                    { gameId: game.id },
+                ).catch(() => {}),
+            ),
+        );
     }
 
     // Admin-only cancel: bypasses organizer check, still refunds + notifies
@@ -869,13 +891,28 @@ export class GamesService {
         for (const player of game.players) {
             try {
                 await this.notificationsService.sendNotification(
-                    player.id, 'CLAIM_STATS', undefined, undefined,
+                    player.id, 'CLAIM_STATS',
+                    '⚽ Oyun bitdi — statistikanı göndər!',
+                    `"${game.title}" oyunu bitdi (${scoreData.scoreTeamA}:${scoreData.scoreTeamB}). Oyuna girib qol və asist statistikanızı qeyd edin.`,
                     undefined, { gameId: game.id, scoreTeamA: scoreData.scoreTeamA, scoreTeamB: scoreData.scoreTeamB },
                 );
             } catch (e) {
                 console.error(`Failed to notify player ${player.id}:`, e.message);
             }
         }
+
+        const organizer = game.players.find(p => p.id === game.organizerId);
+        const tgFinish = [
+            `🏁 <b>Oyun tamamlandı</b>`,
+            ``,
+            `📋 <b>${game.title}</b>`,
+            `⚽ Hesab: <b>${scoreData.scoreTeamA} : ${scoreData.scoreTeamB}</b>`,
+            `👤 Təşkilatçı: ${organizer?.name || game.organizerId}`,
+            `👥 Oyunçu sayı: ${game.players.length}`,
+            ``,
+            `✅ ${game.players.length} oyunçuya statistika göndərmə bildirişi göndərildi.`,
+        ].join('\n');
+        this.telegramService.sendMessage(this.telegramService.adminChatId, tgFinish).catch(() => {});
 
         return savedGame;
     }
@@ -983,9 +1020,78 @@ export class GamesService {
         const mvpBName = game.players.find(p => p.id === game.mvpTeamBId)?.name || 'N/A';
         for (const player of game.players) {
             try {
-                await this.notificationsService.sendNotification(player.id, 'RATE_PLAYERS', undefined, undefined, undefined, { gameId: savedGame.id, mvpAName, mvpBName });
+                await this.notificationsService.sendNotification(
+                    player.id, 'RATE_PLAYERS',
+                    '⭐ Oyunçuları qiymətləndir',
+                    `"${game.title}" oyunu tamamlandı. Komanda yoldaşlarınıza reytinq verin!`,
+                    undefined, { gameId: savedGame.id, mvpAName, mvpBName },
+                );
             } catch (e) {}
         }
+
+        // Personal achievement notifications
+        const allStats = validatedStats;
+        const topScorer = allStats.reduce<{ playerId: string; goals: number } | null>((best, s) =>
+            (!best || s.goals > best.goals) ? s : best, null);
+        const topAssister = allStats.reduce<{ playerId: string; assists: number } | null>((best, s) =>
+            (!best || s.assists > best.assists) ? s : best, null);
+
+        if (topScorer && topScorer.goals > 0) {
+            const name = game.players.find(p => p.id === topScorer.playerId)?.name || '';
+            this.notificationsService.sendNotification(
+                topScorer.playerId, 'ACHIEVEMENT',
+                '⚽ Oyunun ən yaxşı qolçusu!',
+                `Təbriklər${name ? ', ' + name : ''}! Siz bu oyunda ${topScorer.goals} qol vuraraq ən yaxşı qolçu oldunuz! 🏆`,
+                undefined, { gameId: savedGame.id },
+            ).catch(() => {});
+        }
+
+        if (topAssister && topAssister.assists > 0 && topAssister.playerId !== topScorer?.playerId) {
+            const name = game.players.find(p => p.id === topAssister.playerId)?.name || '';
+            this.notificationsService.sendNotification(
+                topAssister.playerId, 'ACHIEVEMENT',
+                '🎯 Oyunun ən yaxşı assistçisi!',
+                `Təbriklər${name ? ', ' + name : ''}! Siz bu oyunda ${topAssister.assists} asistlə ən yaxşı assistçi oldunuz! 🏆`,
+                undefined, { gameId: savedGame.id },
+            ).catch(() => {});
+        }
+
+        const mvpIds = [game.mvpTeamAId, game.mvpTeamBId].filter(Boolean);
+        for (const mvpId of mvpIds) {
+            if (!mvpId) continue;
+            const name = game.players.find(p => p.id === mvpId)?.name || '';
+            this.notificationsService.sendNotification(
+                mvpId, 'ACHIEVEMENT',
+                '👑 MVP seçildiniz!',
+                `Təbriklər${name ? ', ' + name : ''}! Komanda yoldaşlarınız sizi bu oyunun MVP-si seçdi! 🌟`,
+                undefined, { gameId: savedGame.id },
+            ).catch(() => {});
+        }
+
+        // Telegram admin summary
+        const statsLines = validatedStats
+            .filter(s => s.goals > 0 || s.assists > 0)
+            .map(s => {
+                const pName = game.players.find(p => p.id === s.playerId)?.name || s.playerId;
+                const isMvp = s.playerId === game.mvpTeamAId || s.playerId === game.mvpTeamBId;
+                return `  • ${pName}${isMvp ? ' 👑' : ''} — ⚽ ${s.goals} qol, 🎯 ${s.assists} asist`;
+            });
+        const tgMvpAName = game.players.find(p => p.id === game.mvpTeamAId)?.name;
+        const tgMvpBName = game.players.find(p => p.id === game.mvpTeamBId)?.name;
+        const tgStats = [
+            `📊 <b>Statistika təsdiqləndi</b>`,
+            ``,
+            `📋 <b>${game.title}</b>`,
+            `⚽ Hesab: <b>${game.scoreTeamA} : ${game.scoreTeamB}</b>`,
+            ``,
+            statsLines.length ? `<b>Nəticələr:</b>\n${statsLines.join('\n')}` : `Qol/asist yoxdur`,
+            ``,
+            tgMvpAName ? `👑 MVP A: <b>${tgMvpAName}</b>` : null,
+            tgMvpBName ? `👑 MVP B: <b>${tgMvpBName}</b>` : null,
+            ``,
+            `✅ ${game.players.length} oyunçuya reytinq bildirişi göndərildi.`,
+        ].filter(l => l !== null).join('\n');
+        this.telegramService.sendMessage(this.telegramService.adminChatId, tgStats).catch(() => {});
 
         return savedGame;
     }

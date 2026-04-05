@@ -20,6 +20,10 @@ export class TelegramService {
         return !!(this.botToken && this.chatId);
     }
 
+    get adminChatId(): string {
+        return this.chatId;
+    }
+
     private async post(method: string, body: object): Promise<void> {
         const res = await fetch(`${this.apiUrl}/${method}`, {
             method: 'POST',

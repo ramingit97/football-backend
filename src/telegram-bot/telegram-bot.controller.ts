@@ -57,7 +57,25 @@ export class TelegramBotController {
                     const gameId = parts.slice(2).join('_');
                     this.logger.log(`[webhook:game] subAction="${subAction}" gameId="${gameId}"`);
                     if (subAction === 'approve') {
+                        const approvedGame = await this.gamesService.findOne(gameId);
                         await this.gamesService.adminApproveGame(gameId);
+
+                        // Support-сообщение каждому игроку в игре
+                        if (approvedGame) {
+                            const dateStr = new Date(approvedGame.date as any).toISOString().slice(0, 10);
+                            const supportMsg = `✅ Oyununuz təsdiqləndi! "${approvedGame.title}" — ${dateStr} ${approvedGame.time}, 📍 ${approvedGame.location}. Uğurlar! ⚽`;
+                            const players: { id: string; name?: string }[] = approvedGame.players || [];
+                            const playerIds = new Set(players.map(p => p.id));
+                            playerIds.add(approvedGame.organizerId);
+                            for (const userId of playerIds) {
+                                this.supportService.create(
+                                    userId, '🤖 Sistem', '',
+                                    supportMsg,
+                                    true, // silent — без Telegram эха
+                                ).catch(() => {});
+                            }
+                        }
+
                         await this.telegramService.editMessage(chatId, msgId, `${msgText}\n\n✅ <b>TƏSDİQLƏNDİ — oyunçular üçün açıqdır</b>`).catch(() => {});
                     } else if (subAction === 'delete') {
                         await this.gamesService.adminCancelGame(gameId);
