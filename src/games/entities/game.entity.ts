@@ -169,6 +169,41 @@ export class Game {
     @Column({ nullable: true })
     maxAge: number;
 
+    // ── Своя игра (own game mode) ──────────────────────────
+    @Column({ default: 'marketplace' })
+    gameMode: string; // 'marketplace' | 'own'
+
+    @Column({ nullable: true })
+    customLocation: string; // Free text address for own games
+
+    @Column({ default: 0 })
+    guestCount: number; // How many players organizer already has
+
+    @Column({ type: 'jsonb', default: [] })
+    guests: Array<{
+        id: string;
+        name: string;
+        userId?: string;       // Set if guest registered
+        inviteToken?: string;  // Token for invite link
+        paid?: boolean;        // Payment tracking
+        paymentMethod?: string; // 'wallet' | 'cash' | 'card'
+    }>;
+
+    @Column({ default: 'self' })
+    legionPaymentType: string; // 'self' | 'cash' | 'organizer'
+
+    @Column('decimal', { precision: 10, scale: 2, default: 0 })
+    organizerCoversAmount: number; // Per-slot amount when organizer pays for legionnaires
+
+    @Column({ type: 'jsonb', default: [] })
+    paymentTracking: Array<{
+        playerId: string;
+        name: string;
+        status: string;        // 'paid_wallet' | 'paid_cash' | 'paid_card' | 'owes'
+        amount: number;
+        isGuest: boolean;
+    }>;
+
     @CreateDateColumn()
     createdAt: Date;
 

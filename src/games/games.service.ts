@@ -207,7 +207,9 @@ export class GamesService {
             throw new BadRequestException('maxPlayers must be at least 2');
         if (!gameData.format) throw new BadRequestException('format is required');
         if (!gameData.date || !gameData.time) throw new BadRequestException('date and time are required');
-        if (!gameData.stadiumId) throw new BadRequestException('stadiumId is required');
+
+        const isOwnGame = (gameData as any).gameMode === 'own';
+        if (!isOwnGame && !gameData.stadiumId) throw new BadRequestException('stadiumId is required');
 
         if (!gameData.minPlayers && gameData.maxPlayers) {
             gameData.minPlayers = Math.floor(gameData.maxPlayers / 2);
@@ -225,11 +227,39 @@ export class GamesService {
             }
         }
 
-        const game = this.gamesRepository.create({ ...gameData, status: 'pending' });
+        // Own games go live immediately (no admin approval needed, no stadium booking)
+        const initialStatus = isOwnGame ? 'open' : 'pending';
+
+        // For own games set location from customLocation
+        if (isOwnGame && (gameData as any).customLocation) {
+            gameData.location = (gameData as any).customLocation;
+        }
+
+        // For own games: pre-populate players array with guest placeholders
+        if (isOwnGame) {
+            const guestCount = (gameData as any).guestCount || 0;
+            const existingGuests: any[] = (gameData as any).guests || [];
+            const guestPlayers = Array.from({ length: guestCount }, (_, i) => {
+                const saved = existingGuests[i];
+                return {
+                    id: saved?.id || `guest-${Date.now()}-${i}`,
+                    type: 'guest',
+                    name: saved?.name || `Qonaq ${i + 1}`,
+                    position: null,
+                    paidAmount: 0,
+                    isGuest: true,
+                };
+            });
+            gameData.players = guestPlayers;
+            // Sync guests array with same ids/names
+            gameData.guests = guestPlayers.map(g => ({ id: g.id, name: g.name, userId: null, paid: false })) as any;
+        }
+
+        const game = this.gamesRepository.create({ ...gameData, status: initialStatus });
         const savedGame = await this.gamesRepository.save(game);
         this.telegramService.sendNewGame(savedGame as any).catch(() => {});
 
-        if (gameData.stadiumId && gameData.date && gameData.time) {
+        if (!isOwnGame && gameData.stadiumId && gameData.date && gameData.time) {
             try {
                 const dateStr = typeof gameData.date === 'string'
                     ? gameData.date
@@ -295,6 +325,24 @@ export class GamesService {
 
     async delete(id: string): Promise<void> {
         await this.gamesRepository.delete(id);
+    }
+
+    async updatePaymentTracking(gameId: string, organizerId: string, tracking: any[]): Promise<Game> {
+        const game = await this.findOne(gameId);
+        if (!game) throw new NotFoundException('Game not found');
+        if (game.organizerId !== organizerId) throw new BadRequestException('Only organizer can update payment tracking');
+        await this.gamesRepository.update(gameId, { paymentTracking: tracking });
+        return this.findOne(gameId);
+    }
+
+    async updateGuests(gameId: string, organizerId: string, guests: any[]): Promise<Game> {
+        const game = await this.findOne(gameId);
+        if (!game) throw new NotFoundException('Game not found');
+        if (game.organizerId !== organizerId) throw new BadRequestException('Only organizer can update guests');
+        const maxGuests = game.guestCount || 0;
+        if (guests.length > maxGuests) throw new BadRequestException(`Cannot have more than ${maxGuests} guests`);
+        await this.gamesRepository.update(gameId, { guests });
+        return this.findOne(gameId);
     }
 
     async cancelGame(gameId: string, organizerId: string, reason?: string): Promise<Game> {
@@ -416,17 +464,25 @@ export class GamesService {
             }
         }
 
-        // Берём только комиссию платформы — остальное игроки платят на месте
-        const amount = 0.50;
+        // For own games with cash/organizer payment — no upfront charge
+        const skipPayment = game.gameMode === 'own' &&
+            (game.legionPaymentType === 'cash' || game.legionPaymentType === 'organizer');
 
-        try {
-            await this.paymentsService.processPayment(player.id, amount, gameId);
-        } catch (error) {
-            const errorMessage = error.message || '';
-            if (errorMessage.includes('Insufficient funds')) {
-                throw new BadRequestException('Недостаточно средств. Пополните кошелек.');
+        // Берём только комиссию платформы — остальное игроки платят на месте
+        const amount = game.gameMode === 'own' && game.legionPaymentType === 'self'
+            ? Number(game.price) || 0
+            : 0.50;
+
+        if (!skipPayment && amount > 0) {
+            try {
+                await this.paymentsService.processPayment(player.id, amount, gameId);
+            } catch (error) {
+                const errorMessage = error.message || '';
+                if (errorMessage.includes('Insufficient funds')) {
+                    throw new BadRequestException('Недостаточно средств. Пополните кошелек.');
+                }
+                throw new Error(`Ошибка оплаты: ${errorMessage}`);
             }
-            throw new Error(`Ошибка оплаты: ${errorMessage}`);
         }
 
         try {

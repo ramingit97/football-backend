@@ -81,6 +81,22 @@ export class GamesController {
         return this.gamesService.delete(id);
     }
 
+    @Patch(':id/payment-tracking')
+    updatePaymentTracking(
+        @Param('id') id: string,
+        @Body() body: { organizerId: string; tracking: any[] },
+    ) {
+        return this.gamesService.updatePaymentTracking(id, body.organizerId, body.tracking);
+    }
+
+    @Patch(':id/guests')
+    updateGuests(
+        @Param('id') id: string,
+        @Body() body: { organizerId: string; guests: any[] },
+    ) {
+        return this.gamesService.updateGuests(id, body.organizerId, body.guests);
+    }
+
     @Post(':id/cancel')
     cancelGame(@Param('id') id: string, @Body() body: { organizerId: string; reason?: string }) {
         return this.gamesService.cancelGame(id, body.organizerId, body.reason);
