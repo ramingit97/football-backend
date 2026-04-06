@@ -163,6 +163,12 @@ export class Game {
     @Column({ default: 'none' })
     recurrence: string; // 'none' | 'weekly' | 'biweekly'
 
+    @Column({ nullable: true })
+    minAge: number;
+
+    @Column({ nullable: true })
+    maxAge: number;
+
     @CreateDateColumn()
     createdAt: Date;
 

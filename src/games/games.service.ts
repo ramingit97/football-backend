@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThanOrEqual, In } from 'typeorm';
+import { Repository, MoreThanOrEqual, In, IsNull } from 'typeorm';
 import { Game } from './entities/game.entity';
 import { GamePlayerStats } from './entities/game-player-stats.entity';
 import { ChatMessage } from './entities/chat-message.entity';
@@ -42,7 +42,7 @@ export class GamesService {
         private readonly gameReminderProducer: GameReminderProducer,
     ) {}
 
-    async findAll(page = 1, limit = 12, status?: string, format?: string, district?: string, metro?: string) {
+    async findAll(page = 1, limit = 12, status?: string, format?: string, district?: string, metro?: string, minAge?: string) {
         const where: any = {};
         // Never show pending games in public listing; if a specific status is requested use it
         if (status) {
@@ -54,6 +54,11 @@ export class GamesService {
         if (format) where.format = format;
         if (district) where.district = district;
         if (metro) where.metro = metro;
+        if (minAge === 'none') {
+            where.minAge = IsNull();
+        } else if (minAge) {
+            where.minAge = parseInt(minAge);
+        }
 
         const isPastFilter = status === 'finished' || status === 'cancelled';
         if (!isPastFilter) {

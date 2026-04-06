@@ -16,6 +16,7 @@ export class GamesController {
         @Query('format') format?: string,
         @Query('district') district?: string,
         @Query('metro') metro?: string,
+        @Query('minAge') minAge?: string,
     ) {
         return this.gamesService.findAll(
             page ? parseInt(page) : 1,
@@ -24,6 +25,7 @@ export class GamesController {
             format,
             district,
             metro,
+            minAge,
         );
     }
 
