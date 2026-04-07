@@ -661,6 +661,45 @@ export class UsersService {
 
 
 
+    async getRevenueStats(): Promise<{ today: number; week: number; total: number; txCount: number }> {
+        const now = new Date();
+        const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+        const weekStart = new Date(now); weekStart.setDate(now.getDate() - 7); weekStart.setHours(0, 0, 0, 0);
+
+        const [todayRes, weekRes, totalRes, txCount] = await Promise.all([
+            this.transactionsRepository
+                .createQueryBuilder('tx')
+                .select('COALESCE(SUM(tx.amount), 0)', 'sum')
+                .where('tx.createdAt >= :start', { start: todayStart })
+                .getRawOne(),
+            this.transactionsRepository
+                .createQueryBuilder('tx')
+                .select('COALESCE(SUM(tx.amount), 0)', 'sum')
+                .where('tx.createdAt >= :start', { start: weekStart })
+                .getRawOne(),
+            this.transactionsRepository
+                .createQueryBuilder('tx')
+                .select('COALESCE(SUM(tx.amount), 0)', 'sum')
+                .getRawOne(),
+            this.transactionsRepository.count(),
+        ]);
+
+        return {
+            today: parseFloat(todayRes?.sum || '0'),
+            week: parseFloat(weekRes?.sum || '0'),
+            total: parseFloat(totalRes?.sum || '0'),
+            txCount,
+        };
+    }
+
+    async findRecent(limit: number = 10): Promise<User[]> {
+        return this.usersRepository.find({
+            order: { createdAt: 'DESC' },
+            take: limit,
+            select: ['id', 'name', 'email', 'phone', 'role', 'blocked', 'createdAt', 'gamesPlayed', 'balance'],
+        });
+    }
+
     async getTransactionHistory(userId: string): Promise<Transaction[]> {
         return this.transactionsRepository.find({
             where: [

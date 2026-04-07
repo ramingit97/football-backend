@@ -240,6 +240,98 @@ export class TelegramBotController {
                 return { ok: true };
             }
 
+            // /ban email|phone reason
+            if (text.startsWith('/ban ')) {
+                const parts = text.slice(5).trim().split(' ');
+                const identifier = parts[0];
+                const reason = parts.slice(1).join(' ') || 'Admin tərəfindən bloklandı';
+                const user = identifier.includes('@')
+                    ? await this.usersService.findOneByEmail(identifier)
+                    : await this.usersService.findOneByPhone(identifier);
+                if (!user) {
+                    await this.telegramService.sendMessage(chatId, `❌ İstifadəçi tapılmadı: ${identifier}`);
+                    return { ok: true };
+                }
+                await this.usersService.blockUser(user.id, reason);
+                this.notificationsService.sendNotification(
+                    user.id, 'ACCOUNT_BLOCKED',
+                    '🚫 Hesabınız bloklandı',
+                    `Səbəb: ${reason}`,
+                ).catch(() => {});
+                await this.telegramService.sendMessage(chatId,
+                    `🚫 <b>${user.name}</b> bloklandı\nSəbəb: ${reason}`);
+                return { ok: true };
+            }
+
+            // /unban email|phone
+            if (text.startsWith('/unban ')) {
+                const identifier = text.slice(7).trim();
+                const user = identifier.includes('@')
+                    ? await this.usersService.findOneByEmail(identifier)
+                    : await this.usersService.findOneByPhone(identifier);
+                if (!user) {
+                    await this.telegramService.sendMessage(chatId, `❌ İstifadəçi tapılmadı: ${identifier}`);
+                    return { ok: true };
+                }
+                await this.usersService.unblockUser(user.id);
+                this.notificationsService.sendNotification(
+                    user.id, 'ACCOUNT_UNBLOCKED',
+                    '✅ Hesabınız aktiv edildi',
+                    'Hesabınıza giriş bərpa edildi.',
+                ).catch(() => {});
+                await this.telegramService.sendMessage(chatId,
+                    `✅ <b>${user.name}</b> blokdan çıxarıldı`);
+                return { ok: true };
+            }
+
+            // /broadcast Başlıq | Mətn
+            if (text.startsWith('/broadcast ')) {
+                const content = text.slice(11).trim();
+                const sepIdx = content.indexOf('|');
+                const title = sepIdx !== -1 ? content.slice(0, sepIdx).trim() : 'Bildiriş';
+                const message = sepIdx !== -1 ? content.slice(sepIdx + 1).trim() : content;
+                if (!message) {
+                    await this.telegramService.sendMessage(chatId, '⚠️ Format: /broadcast Başlıq | Mətn');
+                    return { ok: true };
+                }
+                await this.telegramService.sendMessage(chatId, '⏳ Göndərilir...');
+                const result = await this.notificationsService.broadcastToAll(title, message);
+                await this.telegramService.sendMessage(chatId,
+                    `📢 <b>Broadcast tamamlandı</b>\n✅ Göndərildi: ${result.sent}\n❌ Xəta: ${result.failed}`);
+                return { ok: true };
+            }
+
+            // /revenue
+            if (text === '/revenue') {
+                const stats = await this.usersService.getRevenueStats();
+                const info = [
+                    `💰 <b>Gəlir statistikası</b>`,
+                    ``,
+                    `📅 Bu gün: <b>${stats.today.toFixed(2)} ₼</b>`,
+                    `📆 Bu həftə: <b>${stats.week.toFixed(2)} ₼</b>`,
+                    `🗓 Cəmi: <b>${stats.total.toFixed(2)} ₼</b>`,
+                    `🔢 Ümumi əməliyyat: ${stats.txCount}`,
+                ].join('\n');
+                await this.telegramService.sendMessage(chatId, info);
+                return { ok: true };
+            }
+
+            // /users [N]
+            if (text.startsWith('/users')) {
+                const limitArg = parseInt(text.split(' ')[1] || '10', 10);
+                const limit = isNaN(limitArg) ? 10 : Math.min(limitArg, 25);
+                const users = await this.usersService.findRecent(limit);
+                const userStats = await this.usersService.getStats();
+                const lines = users.map((u, i) => {
+                    const status = u.blocked ? '🚫' : '✅';
+                    const date = new Date(u.createdAt).toISOString().slice(0, 10);
+                    return `${i + 1}. ${status} <b>${u.name || '—'}</b> | ${u.email}\n    🎮 ${u.gamesPlayed} oyun · 💰 ${(u.balance || 0).toFixed(2)} ₼ · ${date}`;
+                }).join('\n\n');
+                await this.telegramService.sendMessage(chatId,
+                    `👥 <b>Son ${limit} istifadəçi</b> (cəmi: ${userStats.total}, bu gün: +${userStats.newToday})\n\n${lines}`);
+                return { ok: true };
+            }
+
             // /cancelgame ID reason
             if (text.startsWith('/cancelgame ')) {
                 const parts = text.slice(12).trim().split(' ');
@@ -272,13 +364,22 @@ export class TelegramBotController {
                 const help = [
                     `🤖 <b>Topin Admin Bot</b>`,
                     ``,
+                    `<b>İstifadəçilər:</b>`,
+                    `/users [N] — son N istifadəçi (def: 10)`,
+                    `/user email|phone — istifadəçi məlumatı`,
+                    `/addbalance email|phone məbləğ — balans artır`,
+                    `/ban email|phone səbəb — blokla`,
+                    `/unban email|phone — blokdan çıxar`,
+                    ``,
+                    `<b>Maliyyə:</b>`,
+                    `/revenue — gəlir statistikası`,
+                    ``,
+                    `<b>Bildirişlər:</b>`,
+                    `/broadcast Başlıq | Mətn — hamıya push`,
+                    ``,
                     `<b>Dəstək:</b>`,
                     `/tickets — açıq tikerlər`,
                     `/reply ID mətn — tiketə cavab`,
-                    ``,
-                    `<b>İstifadəçilər:</b>`,
-                    `/user email|phone — istifadəçi məlumatı`,
-                    `/addbalance email|phone məbləğ — balans artır`,
                     ``,
                     `<b>Oyunlar:</b>`,
                     `/games — aktiv oyunlar`,
