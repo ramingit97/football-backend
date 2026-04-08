@@ -178,7 +178,7 @@ export class AuthService {
         const user = await this.usersService.findOneById(userId);
         if (user) {
             const { password, ...result } = user;
-            return result;
+            return { ...result, hasPassword: !!password };
         }
         return null;
     }
