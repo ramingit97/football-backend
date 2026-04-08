@@ -351,6 +351,29 @@ export class TelegramBotController {
                 return { ok: true };
             }
 
+            // /msgall mətn — support chat message to ALL users
+            if (text.startsWith('/msgall ')) {
+                const msgText = text.slice(8).trim();
+                if (!msgText) {
+                    await this.telegramService.sendMessage(chatId, '⚠️ Format: /msgall mətn');
+                    return { ok: true };
+                }
+                await this.telegramService.sendMessage(chatId, '⏳ Göndərilir...');
+                const { users } = await this.usersService.findAll(1, 10000);
+                let sent = 0;
+                for (const u of users) {
+                    try {
+                        await this.supportService.createSystemNotification(u.id, msgText);
+                        sent++;
+                    } catch { /* skip */ }
+                }
+                // Also push notification to all
+                await this.notificationsService.broadcastToAll('💬 Mesaj', msgText).catch(() => {});
+                await this.telegramService.sendMessage(chatId,
+                    `✅ <b>Mesaj göndərildi</b>\n👥 ${sent} istifadəçi dəstək chatına əlavə edildi`);
+                return { ok: true };
+            }
+
             // /revenue
             if (text === '/revenue') {
                 const stats = await this.usersService.getRevenueStats();
@@ -426,6 +449,7 @@ export class TelegramBotController {
                     ``,
                     `<b>Bildirişlər:</b>`,
                     `/broadcast Başlıq | Mətn — hamıya push`,
+                    `/msgall mətn — hamıya dəstək chatında mesaj`,
                     ``,
                     `<b>Dəstək:</b>`,
                     `/tickets — açıq tikerlər`,
