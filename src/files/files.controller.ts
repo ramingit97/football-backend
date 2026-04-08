@@ -115,6 +115,13 @@ export class FilesController {
         return this.filesService.uploadTeamFlag(file, teamId);
     }
 
+    // Delete user avatar
+    @Delete('avatar/:userId')
+    async deleteAvatar(@Param('userId') userId: string) {
+        await this.usersService.update(userId, { avatar: null } as any);
+        return { success: true };
+    }
+
     // Delete file by key
     @Delete()
     async deleteFile(@Query('key') key: string) {
