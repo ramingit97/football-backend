@@ -212,16 +212,66 @@ export class TelegramBotController {
                     await this.telegramService.sendMessage(chatId, `❌ İstifadəçi tapılmadı: ${identifier}`);
                     return { ok: true };
                 }
+                const esc = (s: any) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const posLabels: Record<string, string> = { goalkeeper: '🧤 Qapıçı', defender: '🛡 Müdafiəçi', midfielder: '⚙️ Yarım', forward: '⚡ Hücumçu', any: '🌐 Fərq etməz' };
+                const styleLabels: Record<string, string> = { technical: '🎯 Texniki', physical: '💪 Fiziki', tactical: '🧠 Taktiki', aggressive: '🔥 Aqressiv' };
+                const badgeCount = Object.values(user.receivedBadges || {}).reduce((s: number, v: any) => s + (Number(v) || 0), 0);
+                const joinDate = user.createdAt ? new Date(user.createdAt).toISOString().slice(0, 10) : '—';
+                const lastPlayed = user.lastPlayedAt ? new Date(user.lastPlayedAt).toISOString().slice(0, 10) : '—';
+                const blockedLine = user.blocked
+                    ? `\n🚫 <b>BLOKLANIB</b>${user.blockedReason ? ` — ${esc(user.blockedReason)}` : ''}`
+                    : '';
                 const info = [
-                    `👤 <b>${user.name}</b>`,
-                    `📧 ${user.email || '—'}`,
-                    `📱 ${user.phone || '—'}`,
-                    `💰 Balans: <b>${user.balance || 0} ₼</b>`,
-                    `🎮 Oyunlar: ${user.gamesPlayed || 0}`,
-                    `⭐ Reytinq: ${user.averageRating || 0}`,
+                    `👤 <b>${esc(user.name)}</b>${user.blocked ? ' 🚫' : ''}`,
+                    `📧 ${esc(user.email) || '—'}`,
+                    `📱 ${esc(user.phone) || '—'}`,
+                    `🎭 Rol: ${user.role || 'player'} | 🌐 Dil: ${user.language || 'ru'}`,
+                    ``,
+                    `⚽ Mövqe: ${posLabels[user.position] || esc(user.position) || '—'} | 🎮 Üslub: ${styleLabels[user.playStyle] || esc(user.playStyle) || '—'}`,
+                    user.skillLevel ? `🎯 Səviyyə: ${esc(user.skillLevel)}` : null,
+                    (user.age || user.height || user.weight) ? `📏 Yaş: ${user.age || '—'} | Boy: ${user.height || '—'} sm | Çəki: ${user.weight || '—'} kq` : null,
+                    user.preferredFoot ? `🦶 Ayaq: ${user.preferredFoot}` : null,
+                    (user.district || user.metro) ? `📍 ${esc(user.district) || '—'}${user.metro ? ` (${esc(user.metro)})` : ''}` : null,
+                    ``,
+                    `💰 Balans: <b>${(user.balance || 0).toFixed(2)} ₼</b>`,
+                    `🎮 Oyunlar: <b>${user.gamesPlayed || 0}</b> | ⭐ Reytinq: <b>${(user.averageRating || 0).toFixed(2)}</b>`,
+                    `⚽ Qollar: ${user.totalGoals || 0} | 🎯 Ötürmələr: ${user.totalAssists || 0} | 🏆 MOTM: ${user.manOfTheMatchCount || 0}`,
+                    `🔥 Ataka: ${user.attackRating || 50} | 🛡 Müdafiə: ${user.defenseRating || 50} | ⚡ Sürət: ${user.speedRating || 50} | 💪 Dözüm: ${user.staminaRating || 50}`,
+                    `✨ XP: ${user.xp || 0} | Lv: ${user.level || 1} | 🏅 Badgelər: ${badgeCount}`,
+                    (user.noShowCount || user.warningCount) ? `⚠️ No-show: ${user.noShowCount || 0} | Xəbərdarlıq: ${user.warningCount || 0}` : null,
+                    ``,
+                    `📅 Qeydiyyat: ${joinDate} | Son oyun: ${lastPlayed}`,
                     `🆔 <code>${user.id}</code>`,
-                ].join('\n');
+                    blockedLine || null,
+                ].filter(l => l !== null).join('\n');
                 await this.telegramService.sendMessage(chatId, info);
+                return { ok: true };
+            }
+
+            // /msg email|phone mətn
+            if (text.startsWith('/msg ')) {
+                const parts = text.slice(5).trim().split(' ');
+                const identifier = parts[0];
+                const msgText = parts.slice(1).join(' ');
+                if (!identifier || !msgText) {
+                    await this.telegramService.sendMessage(chatId, '⚠️ Format: /msg email|phone mətn');
+                    return { ok: true };
+                }
+                const user = identifier.includes('@')
+                    ? await this.usersService.findOneByEmail(identifier)
+                    : await this.usersService.findOneByPhone(identifier);
+                if (!user) {
+                    await this.telegramService.sendMessage(chatId, `❌ İstifadəçi tapılmadı: ${identifier}`);
+                    return { ok: true };
+                }
+                await this.supportService.createSystemNotification(user.id, msgText);
+                await this.notificationsService.sendNotification(
+                    user.id, 'SUPPORT_REPLY',
+                    '💬 Dəstək mesajı',
+                    msgText,
+                ).catch(() => {});
+                await this.telegramService.sendMessage(chatId,
+                    `✅ <b>${user.name}</b> üçün mesaj göndərildi:\n<i>${msgText}</i>`);
                 return { ok: true };
             }
 
@@ -380,6 +430,7 @@ export class TelegramBotController {
                     `<b>Dəstək:</b>`,
                     `/tickets — açıq tikerlər`,
                     `/reply ID mətn — tiketə cavab`,
+                    `/msg email|phone mətn — istifadəçiyə mesaj göndər`,
                     ``,
                     `<b>Oyunlar:</b>`,
                     `/games — aktiv oyunlar`,
