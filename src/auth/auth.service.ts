@@ -183,17 +183,43 @@ export class AuthService {
     async updateUserProfile(userId: string, updateData: any) {
         const before = await this.usersService.findOneById(userId);
         const updated = await this.usersService.update(userId, updateData);
+        const esc = (s: string) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-        // If a new phone was set and bonus not yet paid, trigger verification
-        if (updateData.phone && updateData.phone !== before?.phone && !before?.phoneBonusPaid) {
-            const status = await this.usersService.markPhoneVerificationPending(userId);
-            // Always send to Telegram; auto_format = AZ number (30-min auto-approve), pending = manual review
-            this.telegramService.sendPhoneVerification({
-                id: userId,
-                name: updated.name,
-                phone: updateData.phone,
-                email: updated.email,
-            }, status === 'auto_format').catch(() => {});
+        // Phone changed
+        if (updateData.phone && updateData.phone !== before?.phone) {
+            if (!before?.phoneBonusPaid) {
+                const status = await this.usersService.markPhoneVerificationPending(userId);
+                this.telegramService.sendPhoneVerification({
+                    id: userId, name: updated.name,
+                    phone: updateData.phone, email: updated.email,
+                }, status === 'auto_format').catch(() => {});
+            } else {
+                // Just notify about the change
+                const msg = [
+                    `📱 <b>Telefon nömrəsi dəyişdi</b>`,
+                    `👤 <b>${esc(updated.name)}</b>`,
+                    `🆔 <code>${userId}</code>`,
+                    ``,
+                    `Əvvəl: <code>${esc(before?.phone || '—')}</code>`,
+                    `İndi: <code>${esc(updateData.phone)}</code>`,
+                ].join('\n');
+                this.telegramService.sendMessage(process.env.TELEGRAM_CHAT_ID || '', msg).catch(() => {});
+            }
+        }
+
+        // Email changed
+        if (updateData.email && updateData.email !== before?.email
+            && !before?.email?.includes('@phone.auth')
+            && !updateData.email?.includes('@phone.auth')) {
+            const msg = [
+                `📧 <b>Email dəyişdi</b>`,
+                `👤 <b>${esc(updated.name)}</b>`,
+                `🆔 <code>${userId}</code>`,
+                ``,
+                `Əvvəl: <code>${esc(before?.email || '—')}</code>`,
+                `İndi: <code>${esc(updateData.email)}</code>`,
+            ].join('\n');
+            this.telegramService.sendMessage(process.env.TELEGRAM_CHAT_ID || '', msg).catch(() => {});
         }
 
         return updated;
