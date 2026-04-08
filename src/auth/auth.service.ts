@@ -1,9 +1,11 @@
-import { Injectable, UnauthorizedException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import * as admin from 'firebase-admin';
 import { UsersService } from '../users/users.service';
 import { TelegramService } from '../stadiums/telegram.service';
+import { MailService } from './mail.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
@@ -38,6 +40,7 @@ export class AuthService {
         private usersService: UsersService,
         private jwtService: JwtService,
         private telegramService: TelegramService,
+        private mailService: MailService,
     ) {
         getAuthApp(this.logger);
     }
@@ -178,6 +181,51 @@ export class AuthService {
             return result;
         }
         return null;
+    }
+
+    async forgotPassword(email: string) {
+        const user = await this.usersService.findOneByEmail(email);
+        // Always return success to avoid user enumeration
+        if (!user || user.email?.includes('@phone.auth')) {
+            return { message: 'Если email найден, письмо отправлено' };
+        }
+
+        const token = crypto.randomBytes(32).toString('hex');
+        const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+        await this.usersService.setResetToken(user.id, token, expires);
+        await this.mailService.sendPasswordReset(user.email, token, user.name);
+
+        return { message: 'Если email найден, письмо отправлено' };
+    }
+
+    async resetPassword(token: string, newPassword: string) {
+        const user = await this.usersService.findByResetToken(token);
+        if (!user || !user.resetPasswordExpires || user.resetPasswordExpires < new Date()) {
+            throw new BadRequestException('Ссылка недействительна или истекла');
+        }
+
+        const hashed = await bcrypt.hash(newPassword, 10);
+        await this.usersService.clearResetToken(user.id, hashed);
+
+        return { message: 'Пароль успешно изменён' };
+    }
+
+    async changePassword(userId: string, oldPassword: string, newPassword: string) {
+        const user = await this.usersService.findOneById(userId);
+        if (!user || !user.password) {
+            throw new BadRequestException('Пользователь не найден');
+        }
+
+        const valid = await bcrypt.compare(oldPassword, user.password);
+        if (!valid) {
+            throw new UnauthorizedException('Неверный текущий пароль');
+        }
+
+        const hashed = await bcrypt.hash(newPassword, 10);
+        await this.usersService.updatePassword(userId, hashed);
+
+        return { message: 'Пароль успешно изменён' };
     }
 
     async updateUserProfile(userId: string, updateData: any) {

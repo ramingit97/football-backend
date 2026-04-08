@@ -290,6 +290,34 @@ export class TelegramBotController {
                 return { ok: true };
             }
 
+            // /setpassword email|phone newpassword
+            if (text.startsWith('/setpassword ')) {
+                const parts = text.slice(13).trim().split(' ');
+                const identifier = parts[0];
+                const newPassword = parts[1];
+                if (!identifier || !newPassword) {
+                    await this.telegramService.sendMessage(chatId, '⚠️ Format: /setpassword email|phone yeniŞifrə');
+                    return { ok: true };
+                }
+                if (newPassword.length < 6) {
+                    await this.telegramService.sendMessage(chatId, '⚠️ Şifrə minimum 6 simvol olmalıdır');
+                    return { ok: true };
+                }
+                const user = identifier.includes('@')
+                    ? await this.usersService.findOneByEmail(identifier)
+                    : await this.usersService.findOneByPhone(identifier);
+                if (!user) {
+                    await this.telegramService.sendMessage(chatId, `❌ İstifadəçi tapılmadı: ${identifier}`);
+                    return { ok: true };
+                }
+                const bcrypt = await import('bcrypt');
+                const hashed = await bcrypt.hash(newPassword, 10);
+                await this.usersService.updatePassword(user.id, hashed);
+                await this.telegramService.sendMessage(chatId,
+                    `✅ <b>${user.name}</b> üçün şifrə dəyişdirildi\n📧 ${user.email || '—'} | 📱 ${user.phone || '—'}`);
+                return { ok: true };
+            }
+
             // /ban email|phone reason
             if (text.startsWith('/ban ')) {
                 const parts = text.slice(5).trim().split(' ');
@@ -443,6 +471,7 @@ export class TelegramBotController {
                     `/addbalance email|phone məbləğ — balans artır`,
                     `/ban email|phone səbəb — blokla`,
                     `/unban email|phone — blokdan çıxar`,
+                    `/setpassword email|phone şifrə — şifrəni dəyişdir`,
                     ``,
                     `<b>Maliyyə:</b>`,
                     `/revenue — gəlir statistikası`,

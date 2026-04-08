@@ -81,6 +81,26 @@ export class UsersService {
         return updatedUser;
     }
 
+    async setResetToken(id: string, token: string, expires: Date): Promise<void> {
+        await this.usersRepository.update(id, { resetPasswordToken: token, resetPasswordExpires: expires } as any);
+    }
+
+    async findByResetToken(token: string): Promise<User | null> {
+        return this.usersRepository.findOne({ where: { resetPasswordToken: token } as any });
+    }
+
+    async clearResetToken(id: string, hashedPassword: string): Promise<void> {
+        await this.usersRepository.update(id, {
+            password: hashedPassword,
+            resetPasswordToken: null,
+            resetPasswordExpires: null,
+        } as any);
+    }
+
+    async updatePassword(id: string, hashedPassword: string): Promise<void> {
+        await this.usersRepository.update(id, { password: hashedPassword } as any);
+    }
+
     async updateFcmToken(id: string, token: string): Promise<void> {
         await this.usersRepository.update(id, { fcmToken: token });
     }
