@@ -19,6 +19,9 @@ import { GamesModule } from './games/games.module';
 import { SupportModule } from './support/support.module';
 import { TelegramBotModule } from './telegram-bot/telegram-bot.module';
 import { GameReminderModule } from './game-reminder/game-reminder.module';
+import { ElanlarModule } from './elanlar/elanlar.module';
+import { Elan } from './elanlar/entities/elan.entity';
+import { ElanMessage } from './elanlar/entities/elan-message.entity';
 import { AnalyticsController } from './analytics/analytics.controller';
 
 import { User } from './users/entities/user.entity';
@@ -77,6 +80,7 @@ import { PlayerReport } from './games/entities/player-report.entity';
                     Challenge,
                     Game, GamePlayerStats, ChatMessage, NoShow, PlayerReport,
                     SupportTicket,
+                    Elan, ElanMessage,
                 ],
                 synchronize: true,
                 retryAttempts: 10,
@@ -100,6 +104,7 @@ import { PlayerReport } from './games/entities/player-report.entity';
         SupportModule,
         TelegramBotModule,
         GameReminderModule,
+        ElanlarModule,
     ],
     controllers: [AnalyticsController],
 })
