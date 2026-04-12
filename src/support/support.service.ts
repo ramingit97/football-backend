@@ -64,6 +64,13 @@ export class SupportService {
         return this.ticketRepo.findOneBy({ id });
     }
 
+    async markAllSeenByUser(userId: string): Promise<void> {
+        await this.ticketRepo.update(
+            { userId, status: 'replied', seenByUser: false },
+            { seenByUser: true },
+        );
+    }
+
     async createSystemNotification(userId: string, text: string): Promise<SupportTicket> {
         const ticket = this.ticketRepo.create({
             userId,

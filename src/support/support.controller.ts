@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
 import { SupportService } from './support.service';
 
 @Controller('support')
@@ -28,5 +28,10 @@ export class SupportController {
     @Post(':id/reply')
     reply(@Param('id') id: string, @Body('reply') reply: string) {
         return this.supportService.reply(id, reply);
+    }
+
+    @Patch('my/seen')
+    markSeen(@Query('userId') userId: string) {
+        return this.supportService.markAllSeenByUser(userId);
     }
 }

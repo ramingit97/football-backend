@@ -23,6 +23,9 @@ export class SupportTicket {
     @Column({ default: 'open' }) // open | replied
     status: string;
 
+    @Column({ default: false })
+    seenByUser: boolean;
+
     @CreateDateColumn()
     createdAt: Date;
 
