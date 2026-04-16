@@ -13,4 +13,5 @@ export class CreateBookingDto {
     minPlayers?: number;
     gameFormat?: string;
     price?: number;
+    note?: string;
 }

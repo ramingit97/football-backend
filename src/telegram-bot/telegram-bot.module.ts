@@ -5,6 +5,7 @@ import { SupportModule } from '../support/support.module';
 import { UsersModule } from '../users/users.module';
 import { GamesModule } from '../games/games.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { BookingsModule } from '../bookings/bookings.module';
 
 @Module({
     imports: [
@@ -13,6 +14,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
         UsersModule,
         GamesModule,
         NotificationsModule,
+        BookingsModule,
     ],
     controllers: [TelegramBotController],
 })

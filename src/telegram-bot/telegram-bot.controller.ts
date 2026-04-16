@@ -5,6 +5,7 @@ import { SupportService } from '../support/support.service';
 import { UsersService } from '../users/users.service';
 import { GamesService } from '../games/games.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { BookingsService } from '../bookings/bookings.service';
 
 @Controller('telegram')
 export class TelegramBotController {
@@ -17,6 +18,7 @@ export class TelegramBotController {
         private readonly usersService: UsersService,
         private readonly gamesService: GamesService,
         private readonly notificationsService: NotificationsService,
+        private readonly bookingsService: BookingsService,
     ) {}
 
     @Post('webhook')
@@ -448,6 +450,70 @@ export class TelegramBotController {
                 return { ok: true };
             }
 
+            // /slots STADIUM_ID [DATE]
+            if (text.startsWith('/slots ')) {
+                const parts = text.slice(7).trim().split(' ');
+                const stadiumId = parts[0];
+                const dateArg = parts[1] || new Date().toISOString().split('T')[0];
+                const stadium = await this.stadiumsService.findOne(stadiumId);
+                if (!stadium) {
+                    await this.telegramService.sendMessage(chatId, `❌ Stadion tapılmadı: ${stadiumId}`);
+                    return { ok: true };
+                }
+                const slots = await this.stadiumsService.getAvailableSlots(stadiumId, dateArg);
+                const freeSlots = slots.filter(s => s.available);
+                const bookedSlots = slots.filter(s => !s.available);
+                const lines = [
+                    `🏟 <b>${stadium.name}</b>`,
+                    `📅 Tarix: <b>${dateArg}</b>`,
+                    ``,
+                    freeSlots.length > 0
+                        ? `✅ <b>Boş saatlar (${freeSlots.length}):</b>\n${freeSlots.map(s => `  • ${s.time}`).join('\n')}`
+                        : `❌ Bu tarix üçün boş slot yoxdur`,
+                    bookedSlots.length > 0
+                        ? `\n🔒 <b>Tutulmuş (${bookedSlots.length}):</b>\n${bookedSlots.map(s => `  • ${s.time}`).join('\n')}`
+                        : '',
+                ].filter(Boolean).join('\n');
+                await this.telegramService.sendMessage(chatId, lines);
+                return { ok: true };
+            }
+
+            // /blockslot STADIUM_ID DATE TIME — block a slot for maintenance
+            if (text.startsWith('/blockslot ')) {
+                const parts = text.slice(11).trim().split(' ');
+                if (parts.length < 3) {
+                    await this.telegramService.sendMessage(chatId, '⚠️ Format: /blockslot STADIUM_ID TARIX SAAT\nMisal: /blockslot abc123 2026-04-20 20:00');
+                    return { ok: true };
+                }
+                const [stadiumId, date, time] = parts;
+                const stadium = await this.stadiumsService.findOne(stadiumId);
+                if (!stadium) {
+                    await this.telegramService.sendMessage(chatId, `❌ Stadion tapılmadı: ${stadiumId}`);
+                    return { ok: true };
+                }
+                await this.bookingsService.create({
+                    stadiumId, date, startTime: time, endTime: time,
+                    gameId: 'BLOCKED', status: 'confirmed', currentPlayers: 0, maxPlayers: 0,
+                } as any);
+                await this.telegramService.sendMessage(chatId,
+                    `🔒 <b>${stadium.name}</b>\n📅 ${date} saat ${time} bloklandı (texniki bağlılıq)`);
+                return { ok: true };
+            }
+
+            // /stadiums — list all approved stadiums
+            if (text === '/stadiums') {
+                const all = await this.stadiumsService.findAll();
+                if (!all.length) {
+                    await this.telegramService.sendMessage(chatId, '🏟 Heç bir stadion yoxdur');
+                    return { ok: true };
+                }
+                const lines = all.map((s, i) =>
+                    `${i + 1}. <b>${s.name}</b> — ${s.district || '—'}\n    💰 ${s.pricePerHour} ₼/saat | ⏰ ${s.openTime}–${s.closeTime}\n    🆔 <code>${s.id}</code>`
+                ).join('\n\n');
+                await this.telegramService.sendMessage(chatId, `🏟 <b>Stadionlar (${all.length}):</b>\n\n${lines}`);
+                return { ok: true };
+            }
+
             // /stats
             if (text === '/stats') {
                 const stadiumStats = await this.stadiumsService.getStats();
@@ -488,6 +554,11 @@ export class TelegramBotController {
                     `<b>Oyunlar:</b>`,
                     `/games — aktiv oyunlar`,
                     `/cancelgame ID səbəb — oyunu ləğv et`,
+                    ``,
+                    `<b>Stadionlar:</b>`,
+                    `/stadiums — bütün stadionlar + ID-lər`,
+                    `/slots STADIUM_ID [DATE] — boş saatlar`,
+                    `/blockslot STADIUM_ID DATE TIME — saatı bağla`,
                     ``,
                     `<b>Ümumi:</b>`,
                     `/stats — statistika`,

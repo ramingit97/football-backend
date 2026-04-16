@@ -412,6 +412,20 @@ export class TelegramService {
         }
     }
 
+    async notifyAdmin(text: string): Promise<void> {
+        if (!this.isConfigured) return;
+        try {
+            await this.post('sendMessage', {
+                chat_id: this.chatId,
+                text,
+                parse_mode: 'HTML',
+                disable_web_page_preview: true,
+            });
+        } catch (err: any) {
+            this.logger.error('Telegram notifyAdmin failed:', err?.message);
+        }
+    }
+
     async sendMessage(chatId: string | number, text: string): Promise<void> {
         if (!this.isConfigured) return;
         try {

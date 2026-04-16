@@ -1,14 +1,28 @@
 import { Controller, Get, Post, Patch, Body, Query, Param } from '@nestjs/common';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { TelegramService } from '../stadiums/telegram.service';
 
 @Controller('bookings')
 export class BookingsController {
-    constructor(private readonly bookingsService: BookingsService) { }
+    constructor(
+        private readonly bookingsService: BookingsService,
+        private readonly telegramService: TelegramService,
+    ) {}
 
     @Post()
-    create(@Body() createBookingDto: CreateBookingDto) {
-        return this.bookingsService.create(createBookingDto);
+    async create(@Body() createBookingDto: CreateBookingDto) {
+        const booking = await this.bookingsService.create(createBookingDto);
+        const { stadiumId, date, startTime, customerName, note } = createBookingDto;
+        const noteText = note ? `\n📝 Qeyd: <i>${note}</i>` : '';
+        this.telegramService.notifyAdmin(
+            `🏟 <b>Yeni sifariş!</b>\n\n` +
+            `📅 ${date} — ${startTime}\n` +
+            `🆔 Stadion: <code>${stadiumId}</code>\n` +
+            `👤 ${customerName || 'Qeydiyyatsız'}${noteText}\n\n` +
+            `Booking ID: <code>${booking.id}</code>`,
+        ).catch(() => {});
+        return booking;
     }
 
     @Get()
