@@ -56,6 +56,11 @@ export class GamesController {
         return game;
     }
 
+    @Get(':id/chat')
+    getChatMessages(@Param('id') id: string) {
+        return this.gamesService.getChatMessages(id);
+    }
+
     @Get('team/:teamId')
     findByTeam(@Param('teamId') teamId: string) {
         return this.gamesService.findByTeam(teamId);
