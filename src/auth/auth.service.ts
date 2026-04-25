@@ -1,5 +1,8 @@
 import { Injectable, UnauthorizedException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, LessThan } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import * as admin from 'firebase-admin';
@@ -8,6 +11,7 @@ import { TelegramService } from '../stadiums/telegram.service';
 import { MailService } from './mail.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { RefreshToken } from './entities/refresh-token.entity';
 
 let authApp: admin.app.App | null = null;
 
@@ -35,14 +39,86 @@ function getAuthApp(logger: Logger): admin.app.App | null {
 @Injectable()
 export class AuthService {
     private readonly logger = new Logger(AuthService.name);
+    private readonly refreshTtlDays: number;
 
     constructor(
         private usersService: UsersService,
         private jwtService: JwtService,
         private telegramService: TelegramService,
         private mailService: MailService,
+        private configService: ConfigService,
+        @InjectRepository(RefreshToken)
+        private refreshTokenRepo: Repository<RefreshToken>,
     ) {
         getAuthApp(this.logger);
+        this.refreshTtlDays = parseInt(
+            this.configService.get<string>('REFRESH_EXPIRATION_DAYS', '30'),
+            10,
+        );
+    }
+
+    private hashRefreshToken(raw: string): string {
+        return crypto.createHash('sha256').update(raw).digest('hex');
+    }
+
+    private async issueTokens(user: { id: string; email: string; role: string }, userAgent?: string) {
+        const access_token = this.jwtService.sign({
+            email: user.email,
+            sub: user.id,
+            role: user.role,
+        });
+
+        const raw = crypto.randomBytes(48).toString('hex');
+        const tokenHash = this.hashRefreshToken(raw);
+        const expiresAt = new Date(Date.now() + this.refreshTtlDays * 24 * 60 * 60 * 1000);
+
+        await this.refreshTokenRepo.save(this.refreshTokenRepo.create({
+            userId: user.id,
+            tokenHash,
+            expiresAt,
+            userAgent: userAgent ? userAgent.slice(0, 255) : null,
+        }));
+
+        return { access_token, refresh_token: raw };
+    }
+
+    async refresh(rawRefreshToken: string, userAgent?: string) {
+        if (!rawRefreshToken) {
+            throw new UnauthorizedException('Refresh token required');
+        }
+        const tokenHash = this.hashRefreshToken(rawRefreshToken);
+        const record = await this.refreshTokenRepo.findOne({ where: { tokenHash } });
+
+        if (!record || record.revokedAt || record.expiresAt < new Date()) {
+            throw new UnauthorizedException('Invalid refresh token');
+        }
+
+        const user = await this.usersService.findOneById(record.userId);
+        if (!user) {
+            throw new UnauthorizedException('User not found');
+        }
+
+        // Rotate: revoke old, issue new
+        record.revokedAt = new Date();
+        await this.refreshTokenRepo.save(record);
+
+        const tokens = await this.issueTokens(
+            { id: user.id, email: user.email, role: user.role },
+            userAgent,
+        );
+
+        // Best-effort cleanup of expired tokens for this user
+        this.refreshTokenRepo
+            .delete({ userId: user.id, expiresAt: LessThan(new Date()) })
+            .catch(() => {});
+
+        return tokens;
+    }
+
+    async revokeRefreshToken(rawRefreshToken: string): Promise<void> {
+        if (!rawRefreshToken) return;
+        const tokenHash = this.hashRefreshToken(rawRefreshToken);
+        await this.refreshTokenRepo.update({ tokenHash }, { revokedAt: new Date() });
     }
 
     async validateUser(email: string, pass: string): Promise<any> {
@@ -63,7 +139,7 @@ export class AuthService {
         return null;
     }
 
-    async login(loginDto: LoginDto) {
+    async login(loginDto: LoginDto, userAgent?: string) {
         let user: any = null;
         if (loginDto.phone) {
             // Normalize: strip leading 0 and spaces, prepend +994 if no country code
@@ -77,14 +153,14 @@ export class AuthService {
         if (!user) {
             throw new UnauthorizedException('Invalid credentials');
         }
-        const payload = { email: user.email, sub: user.id, role: user.role };
-        return {
-            access_token: this.jwtService.sign(payload),
-            user,
-        };
+        const tokens = await this.issueTokens(
+            { id: user.id, email: user.email, role: user.role },
+            userAgent,
+        );
+        return { ...tokens, user };
     }
 
-    async register(registerDto: RegisterDto) {
+    async register(registerDto: RegisterDto, userAgent?: string) {
         const existingUser = await this.usersService.findOneByEmail(registerDto.email);
         if (existingUser) {
             throw new ConflictException('User already exists');
@@ -95,11 +171,11 @@ export class AuthService {
             password: hashedPassword,
         });
         this.telegramService.sendNewUser(user).catch(() => {});
-        const payload = { email: user.email, sub: user.id, role: user.role };
-        return {
-            access_token: this.jwtService.sign(payload),
-            user: { ...user, password: undefined },
-        };
+        const tokens = await this.issueTokens(
+            { id: user.id, email: user.email, role: user.role },
+            userAgent,
+        );
+        return { ...tokens, user: { ...user, password: undefined } };
     }
 
     async verifyFirebaseToken(idToken: string): Promise<admin.auth.DecodedIdToken> {
@@ -113,7 +189,7 @@ export class AuthService {
         }
     }
 
-    async loginWithPhone(idToken: string) {
+    async loginWithPhone(idToken: string, userAgent?: string) {
         const decodedToken = await this.verifyFirebaseToken(idToken);
         const phoneNumber = decodedToken.phone_number;
 
@@ -134,14 +210,14 @@ export class AuthService {
             this.telegramService.sendNewUser(user).catch(() => {});
         }
 
-        const payload = { email: user.email, sub: user.id, role: user.role };
-        return {
-            access_token: this.jwtService.sign(payload),
-            user: { ...user, password: undefined },
-        };
+        const tokens = await this.issueTokens(
+            { id: user.id, email: user.email, role: user.role },
+            userAgent,
+        );
+        return { ...tokens, user: { ...user, password: undefined } };
     }
 
-    async loginWithGoogle(idToken: string) {
+    async loginWithGoogle(idToken: string, userAgent?: string) {
         const decodedToken = await this.verifyFirebaseToken(idToken);
 
         const email = decodedToken.email;
@@ -166,12 +242,11 @@ export class AuthService {
             user = await this.usersService.findOneById(user.id);
         }
 
-        const payload = { email: user.email, sub: user.id, role: user.role };
-        return {
-            access_token: this.jwtService.sign(payload),
-            user: { ...user, password: undefined },
-            isNewUser,
-        };
+        const tokens = await this.issueTokens(
+            { id: user.id, email: user.email, role: user.role },
+            userAgent,
+        );
+        return { ...tokens, user: { ...user, password: undefined }, isNewUser };
     }
 
     async getUserProfile(userId: string) {

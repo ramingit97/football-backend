@@ -670,6 +670,16 @@ export class UsersService {
             const savedTransaction = await queryRunner.manager.save(transaction);
 
             await queryRunner.commitTransaction();
+
+            this.notificationsService.sendNotification(
+                receiverId,
+                'TRANSFER_RECEIVED',
+                undefined,
+                undefined,
+                undefined,
+                { amount, senderId, senderName: sender.name, note: note || '' },
+            ).catch(() => {});
+
             return savedTransaction;
         } catch (err) {
             await queryRunner.rollbackTransaction();
@@ -795,16 +805,14 @@ export class UsersService {
 
         const saved = await this.friendshipsRepository.save(friendship);
 
-        try {
-            await this.notificationsService.sendNotification(
-                receiverId,
-                'FRIEND_REQUEST',
-                'Новый запрос в друзья',
-                `${requester?.name || 'Игрок'} хочет добавить вас в друзья.`,
-            );
-        } catch (e) {
-            console.error('Failed to notify friend request receiver:', e.message);
-        }
+        this.notificationsService.sendNotification(
+            receiverId,
+            'FRIEND_REQUEST',
+            undefined,
+            undefined,
+            undefined,
+            { requesterId, requesterName: requester?.name || '' },
+        ).catch(() => {});
 
         return saved;
     }
@@ -818,25 +826,14 @@ export class UsersService {
 
         const responder = await this.usersRepository.findOne({ where: { id: request.receiverId } });
 
-        try {
-            if (status === 'accepted') {
-                await this.notificationsService.sendNotification(
-                    request.requesterId,
-                    'FRIEND_ACCEPTED',
-                    'Запрос принят',
-                    `${responder?.name || 'Игрок'} принял ваш запрос в друзья.`,
-                );
-            } else {
-                await this.notificationsService.sendNotification(
-                    request.requesterId,
-                    'FRIEND_REJECTED',
-                    'Запрос отклонён',
-                    `${responder?.name || 'Игрок'} отклонил ваш запрос в друзья.`,
-                );
-            }
-        } catch (e) {
-            console.error('Failed to notify friend request sender:', e.message);
-        }
+        this.notificationsService.sendNotification(
+            request.requesterId,
+            status === 'accepted' ? 'FRIEND_ACCEPTED' : 'FRIEND_REJECTED',
+            undefined,
+            undefined,
+            undefined,
+            { responderId: request.receiverId, responderName: responder?.name || '' },
+        ).catch(() => {});
 
         return saved;
     }

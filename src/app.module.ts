@@ -30,6 +30,7 @@ import { TournamentSlot } from './tournaments/entities/tournament-slot.entity';
 import { TournamentRosterPlayer } from './tournaments/entities/tournament-roster-player.entity';
 import { AnalyticsController } from './analytics/analytics.controller';
 
+import { RefreshToken } from './auth/entities/refresh-token.entity';
 import { User } from './users/entities/user.entity';
 import { Transaction } from './users/entities/transaction.entity';
 import { Friendship } from './users/entities/friendship.entity';
@@ -76,6 +77,7 @@ import { PlayerReport } from './games/entities/player-report.entity';
                 password: configService.get<string>('DB_PASSWORD', 'password'),
                 database: configService.get<string>('DB_DATABASE', 'football_db'),
                 entities: [
+                    RefreshToken,
                     User, Transaction, Friendship,
                     Achievement,
                     PlayerRating, GameMvpVote, GameMvpAward,

@@ -90,17 +90,15 @@ export class ElanlarService {
         elan.convertedGameId = gameId;
         await this.elanRepo.save(elan);
 
-        // Notify all interested players
-        const notifyMsg = `🎮 "${gameTitle}" — ${elan.date} oyunu yaradıldı! Qatılmaq üçün bax.`;
         for (const player of elan.interested) {
             if (player.id === userId) continue;
             this.notificationsService.sendNotification(
                 player.id,
                 'GAME_CREATED',
-                '⚽ Oyun yaradıldı!',
-                notifyMsg,
                 undefined,
-                { gameId },
+                undefined,
+                undefined,
+                { gameId, gameTitle, date: elan.date },
             ).catch(() => {});
         }
 
@@ -127,11 +125,12 @@ export class ElanlarService {
 
         for (const user of users) {
             this.notificationsService.sendNotification(
-                user.id, 'ELAN_INVITE',
-                '📋 Sizi elan maraqlandıra bilər',
-                `${elan.creatorName} oynamaq istəyir — ${elan.date} ${elan.time || ''}`,
+                user.id,
+                'ELAN_INVITE',
                 undefined,
-                { elanId },
+                undefined,
+                undefined,
+                { elanId, creatorName: elan.creatorName, date: elan.date, time: elan.time || '' },
             ).catch(() => {});
         }
 
@@ -147,6 +146,27 @@ export class ElanlarService {
 
     async addMessage(elanId: string, userId: string, userName: string, userAvatar: string, message: string): Promise<ElanMessage> {
         const msg = this.messageRepo.create({ elanId, userId, userName, userAvatar, message });
-        return this.messageRepo.save(msg);
+        const saved = await this.messageRepo.save(msg);
+
+        // Notify all interested participants except the sender
+        try {
+            const elan = await this.elanRepo.findOne({ where: { id: elanId } });
+            if (elan) {
+                const preview = message.length > 80 ? message.slice(0, 80) + '…' : message;
+                for (const participant of (elan.interested || [])) {
+                    if (participant.id === userId) continue;
+                    this.notificationsService.sendNotification(
+                        participant.id,
+                        'ELAN_MESSAGE',
+                        undefined,
+                        preview,
+                        undefined,
+                        { elanId, senderName: userName },
+                    ).catch(() => {});
+                }
+            }
+        } catch {}
+
+        return saved;
     }
 }

@@ -9,27 +9,33 @@ export class AuthController {
     constructor(private authService: AuthService) {}
 
     @Post('login')
-    login(@Body() loginDto: LoginDto) {
-        return this.authService.login(loginDto);
+    login(@Body() loginDto: LoginDto, @Request() req: any) {
+        return this.authService.login(loginDto, req.headers['user-agent']);
     }
 
     @Post('login-phone')
-    loginPhone(@Body('idToken') idToken: string) {
-        return this.authService.loginWithPhone(idToken);
+    loginPhone(@Body('idToken') idToken: string, @Request() req: any) {
+        return this.authService.loginWithPhone(idToken, req.headers['user-agent']);
     }
 
     @Post('login-google')
-    loginGoogle(@Body('idToken') idToken: string) {
-        return this.authService.loginWithGoogle(idToken);
+    loginGoogle(@Body('idToken') idToken: string, @Request() req: any) {
+        return this.authService.loginWithGoogle(idToken, req.headers['user-agent']);
     }
 
     @Post('register')
-    register(@Body() registerDto: RegisterDto) {
-        return this.authService.register(registerDto);
+    register(@Body() registerDto: RegisterDto, @Request() req: any) {
+        return this.authService.register(registerDto, req.headers['user-agent']);
+    }
+
+    @Post('refresh')
+    async refresh(@Body('refresh_token') refreshToken: string, @Request() req: any) {
+        return this.authService.refresh(refreshToken, req.headers['user-agent']);
     }
 
     @Post('logout')
-    logout() {
+    async logout(@Body('refresh_token') refreshToken: string) {
+        await this.authService.revokeRefreshToken(refreshToken);
         return { message: 'Logged out successfully' };
     }
 
