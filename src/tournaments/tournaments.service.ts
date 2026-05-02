@@ -49,17 +49,7 @@ export class TournamentsService {
             throw new BadRequestException('maxTeams must be 8 or 16');
         }
 
-        const PLATFORM_FEE = 5;
-
-        // Deduct 5 AZN platform fee from organizer
         const organizer = await this.usersService.findOneById(organizerId);
-        const balance = Number(organizer?.balance ?? 0);
-        if (balance < PLATFORM_FEE) {
-            throw new BadRequestException(
-                `Недостаточно средств для создания турнира. Ваш баланс: ${balance.toFixed(2)} ₼, необходимо: ${PLATFORM_FEE} ₼`,
-            );
-        }
-        await this.usersService.updateBalance(organizerId, -PLATFORM_FEE);
 
         // Auto-calculate prize pool from entry fee × max teams if not explicitly provided
         const computedPrizePool = Number(dto.prizePool) > 0
@@ -308,49 +298,56 @@ export class TournamentsService {
 
     // ─── SLOT PROPOSAL ─────────────────────────────────────────────────────────
 
-    async proposeSlot(tournamentId: string, matchId: string, slotId: string, captainId: string): Promise<TournamentMatch> {
-        const match = await this.matchRepo.findOneBy({ id: matchId, tournamentId });
-        if (!match) throw new NotFoundException('Match not found');
-        if (match.status !== 'scheduled') {
-            throw new BadRequestException('Match already has a slot or is completed');
+    async proposeSlot(tournamentId: string, matchId: string, slotId: string, requesterId: string): Promise<TournamentMatch> {
+        const tournament = await this.tournamentRepo.findOneBy({ id: tournamentId });
+        if (!tournament) throw new NotFoundException('Tournament not found');
+        if (tournament.organizerId !== requesterId) {
+            throw new ForbiddenException('Only organizer can assign match slots');
         }
 
-        const [homeTeam, awayTeam] = await Promise.all([
-            this.teamRepo.findOneBy({ tournamentId, teamId: match.homeTeamId }),
-            this.teamRepo.findOneBy({ tournamentId, teamId: match.awayTeamId }),
-        ]);
-
-        if (homeTeam?.captainId !== captainId && awayTeam?.captainId !== captainId) {
-            throw new ForbiddenException('Only match participants can propose a slot');
+        const match = await this.matchRepo.findOneBy({ id: matchId, tournamentId });
+        if (!match) throw new NotFoundException('Match not found');
+        if (match.status === 'played' || match.status === 'walkover_home' || match.status === 'walkover_away') {
+            throw new BadRequestException('Match already finished');
         }
 
         const slot = await this.slotRepo.findOneBy({ id: slotId, tournamentId });
         if (!slot) throw new NotFoundException('Slot not found');
         if (slot.status !== 'available') throw new BadRequestException('This slot is not available');
 
-        // Reserve slot for 12 hours
+        // Free previous slot if reassigning
+        if (match.slotId && match.slotId !== slotId) {
+            await this.slotRepo.update(match.slotId, { status: 'available', reservedForMatchId: null, reservedAt: null });
+        }
+
         await this.slotRepo.update(slotId, {
-            status: 'reserved',
+            status: 'confirmed',
             reservedForMatchId: matchId,
             reservedAt: new Date(),
         });
 
-        match.pendingSlotId = slotId;
-        match.pendingSlotProposedBy = captainId;
-        match.status = 'slot_pending';
+        match.slotId = slotId;
+        match.pendingSlotId = null;
+        match.pendingSlotProposedBy = null;
+        match.status = 'confirmed';
         await this.matchRepo.save(match);
 
-        // Notify the opposing captain
-        const otherTeam = homeTeam?.captainId === captainId ? awayTeam : homeTeam;
-        if (otherTeam) {
-            await this.notificationsService.sendNotification(
-                otherTeam.captainId,
-                'SLOT_PROPOSED',
-                'SLOT_PROPOSED',
-                'SLOT_PROPOSED',
-                undefined,
-                { tournamentId, matchId, slotId, date: slot.date, time: slot.startTime, stadium: slot.stadiumName },
-            );
+        // Notify both captains about the assigned slot
+        const [homeTeam, awayTeam] = await Promise.all([
+            this.teamRepo.findOneBy({ tournamentId, teamId: match.homeTeamId }),
+            this.teamRepo.findOneBy({ tournamentId, teamId: match.awayTeamId }),
+        ]);
+        for (const team of [homeTeam, awayTeam]) {
+            if (team?.captainId) {
+                await this.notificationsService.sendNotification(
+                    team.captainId,
+                    'SLOT_ASSIGNED',
+                    'SLOT_ASSIGNED',
+                    'SLOT_ASSIGNED',
+                    undefined,
+                    { tournamentId, matchId, slotId, date: slot.date, time: slot.startTime, stadium: slot.stadiumName },
+                ).catch(() => null);
+            }
         }
 
         this.gateway.emitToTournament(tournamentId, 'matchUpdated', { match });
@@ -497,11 +494,12 @@ export class TournamentsService {
             await this.teamRepo.update({ tournamentId, teamId: loserId }, { eliminated: true });
 
             const winnerReg = actualWinnerId === match.homeTeamId ? homeTeam : awayTeam;
+            const runnerUpReg = actualWinnerId === match.homeTeamId ? awayTeam : homeTeam;
             const totalTeams = await this.teamRepo.count({ where: { tournamentId } });
             const isFinal = this.isFinalBracketPosition(match.bracketPosition, totalTeams);
 
             if (isFinal) {
-                if (winnerReg) await this.completeTournament(tournamentId, winnerReg, tournament.name);
+                if (winnerReg) await this.completeTournament(tournamentId, winnerReg, runnerUpReg, tournament.name);
             } else {
                 if (winnerReg) await this.advanceInBracket(match, winnerReg, totalTeams);
             }
@@ -560,11 +558,12 @@ export class TournamentsService {
                 this.teamRepo.findOneBy({ tournamentId, teamId: match.awayTeamId }),
             ]);
             const winnerReg = isHome ? homeTeam : awayTeam;
+            const runnerUpReg = isHome ? awayTeam : homeTeam;
             const totalTeams = await this.teamRepo.count({ where: { tournamentId } });
             const isFinal = this.isFinalBracketPosition(match.bracketPosition, totalTeams);
 
             if (isFinal) {
-                if (winnerReg) await this.completeTournament(tournamentId, winnerReg, tournament.name);
+                if (winnerReg) await this.completeTournament(tournamentId, winnerReg, runnerUpReg, tournament.name);
             } else {
                 if (winnerReg) await this.advanceInBracket(match, winnerReg, totalTeams);
             }
@@ -876,13 +875,29 @@ export class TournamentsService {
         });
     }
 
-    private async completeTournament(tournamentId: string, winnerReg: TournamentTeam, tournamentName: string): Promise<void> {
+    private async completeTournament(
+        tournamentId: string,
+        winnerReg: TournamentTeam,
+        runnerUpReg: TournamentTeam | null,
+        tournamentName: string,
+    ): Promise<void> {
         const tournament = await this.tournamentRepo.findOneBy({ id: tournamentId });
         if (!tournament) return;
 
         const prizePool = Number(tournament.prizePool);
+        const prize1Pct = Number(tournament.prize1Percent || 0);
+        const prize2Pct = Number(tournament.prize2Percent || 0);
+
         if (prizePool > 0) {
-            await this.usersService.updateBalance(winnerReg.captainId, prizePool).catch(() => null);
+            const winnerPrize = Math.round((prizePool * prize1Pct / 100) * 100) / 100;
+            const runnerUpPrize = Math.round((prizePool * prize2Pct / 100) * 100) / 100;
+
+            if (winnerPrize > 0) {
+                await this.usersService.updateBalance(winnerReg.captainId, winnerPrize).catch(() => null);
+            }
+            if (runnerUpReg && runnerUpPrize > 0) {
+                await this.usersService.updateBalance(runnerUpReg.captainId, runnerUpPrize).catch(() => null);
+            }
         }
 
         // Apply champion badge to all team members
@@ -901,10 +916,28 @@ export class TournamentsService {
             }
         } catch (_) {}
 
+        // Notify runner-up team
+        if (runnerUpReg) {
+            try {
+                const runnerUpTeam = await this.teamsService.findOne(runnerUpReg.teamId);
+                for (const playerId of runnerUpTeam.playerIds) {
+                    await this.notificationsService.sendNotification(
+                        playerId,
+                        'TOURNAMENT_RUNNER_UP',
+                        '🥈 2 место!',
+                        `Команда «${runnerUpReg.teamName}» заняла 2 место в турнире «${tournamentName}»!`,
+                        undefined,
+                        { tournamentId },
+                    ).catch(() => null);
+                }
+            } catch (_) {}
+        }
+
         await this.tournamentRepo.update(tournamentId, { status: 'completed' });
 
         this.gateway.emitToTournament(tournamentId, 'tournamentComplete', {
             winner: winnerReg,
+            runnerUp: runnerUpReg,
             tournamentName,
         });
     }
