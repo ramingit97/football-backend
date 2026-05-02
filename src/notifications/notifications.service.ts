@@ -49,10 +49,16 @@ export class NotificationsService {
         return { success: true };
     }
 
-    async broadcastToAll(title: string, message: string): Promise<{ sent: number; failed: number }> {
+    async broadcastToAll(
+        title: string,
+        message: string,
+        type = 'BROADCAST',
+        metadata?: Record<string, any>,
+        translations?: { titleRu?: string; messageRu?: string; titleAz?: string; messageAz?: string },
+    ): Promise<{ sent: number; failed: number }> {
         const users = await this.usersService['usersRepository'].find({
             where: { blocked: false },
-            select: ['id', 'fcmToken'],
+            select: ['id', 'fcmToken', 'language'],
         });
 
         let sent = 0;
@@ -62,13 +68,22 @@ export class NotificationsService {
         await Promise.all(users.map(async (user: any) => {
             try {
                 await this.notificationRepository.save(
-                    this.notificationRepository.create({ userId: user.id, type: 'BROADCAST', title, message, isRead: false }),
+                    this.notificationRepository.create({ userId: user.id, type, title, message, isRead: false, metadata: metadata || null }),
                 );
-                if (user.fcmToken) {
+                if (user.fcmToken && translations) {
+                    const isAz = user.language !== 'ru';
+                    const fcmTitle = isAz ? (translations.titleAz || translations.titleRu || title) : (translations.titleRu || title);
+                    const fcmBody  = isAz ? (translations.messageAz || translations.messageRu || message) : (translations.messageRu || message);
+                    await firebaseApp.messaging().send({
+                        token: user.fcmToken,
+                        notification: { title: fcmTitle, body: fcmBody },
+                        data: { type, userId: user.id },
+                    });
+                } else if (user.fcmToken && title) {
                     await firebaseApp.messaging().send({
                         token: user.fcmToken,
                         notification: { title, body: message },
-                        data: { type: 'BROADCAST', userId: user.id },
+                        data: { type, userId: user.id },
                     });
                 }
                 sent++;

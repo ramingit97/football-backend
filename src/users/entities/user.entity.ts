@@ -144,8 +144,14 @@ export class User {
     @Column({ type: 'float', default: 1.00 })
     balance: number;
 
-    @Column({ default: 'ru' })
+    @Column({ default: 'az' })
     language: string;
+
+    @Column({ nullable: true })
+    telegramUsername: string;
+
+    @Column({ default: false })
+    isSystemUser: boolean;
 
     @Column({ default: false })
     blocked: boolean;

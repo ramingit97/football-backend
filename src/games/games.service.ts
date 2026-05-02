@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThanOrEqual, In, IsNull } from 'typeorm';
+import { Repository, MoreThanOrEqual, In, IsNull, Raw } from 'typeorm';
 import { Game } from './entities/game.entity';
 import { GamePlayerStats } from './entities/game-player-stats.entity';
 import { ChatMessage } from './entities/chat-message.entity';
@@ -62,9 +62,8 @@ export class GamesService {
 
         const isPastFilter = status === 'finished' || status === 'cancelled';
         if (!isPastFilter) {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            where.date = MoreThanOrEqual(today);
+            // Show all games from today (any time) — hide only from tomorrow onwards
+            where.date = Raw(alias => `${alias} >= CURRENT_DATE`);
         }
 
         const [data, total] = await this.gamesRepository.findAndCount({
@@ -296,18 +295,21 @@ export class GamesService {
             }
         }
 
-        // Notify matching players about the new game (fire-and-forget)
-        // skipDistrict=true: notify all matching skill players city-wide, not just same district
-        this.notifyMatchingPlayers(savedGame, {
-            type: 'NEW_GAME',
-            title: 'Yeni oyun yaradıldı! ⚽',
-            buildMessage: () => {
-                const dateStr = typeof savedGame.date === 'string'
-                    ? savedGame.date
-                    : new Date(savedGame.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-                return `${savedGame.title} · ${savedGame.format} · ${dateStr} ${savedGame.time} · ${savedGame.location}`;
+        // Notify ALL users about the new game (broadcast while user base is small)
+        const gameDateIso = typeof savedGame.date === 'string'
+            ? savedGame.date
+            : new Date(savedGame.date as any).toISOString().slice(0, 10);
+        this.notificationsService.broadcastToAll(
+            '', '',
+            'GAME_CREATED',
+            { gameTitle: savedGame.title, date: gameDateIso, time: savedGame.time, format: savedGame.format, location: savedGame.location, gameId: savedGame.id },
+            {
+                titleRu: `⚽ Новая игра — ${savedGame.format}!`,
+                messageRu: `${savedGame.location} · ${gameDateIso} ${savedGame.time} · Присоединяйтесь!`,
+                titleAz: `⚽ Yeni oyun — ${savedGame.format}!`,
+                messageAz: `${savedGame.location} · ${gameDateIso} ${savedGame.time} · Qoşulun!`,
             },
-        }, true).catch(e => console.error('Failed to send new-game notifications:', e.message));
+        ).catch(e => console.error('Failed to broadcast new-game notification:', e.message));
 
         // Планируем напоминание за 1 час до игры
         const gameDateStr = new Date(savedGame.date as any).toISOString().slice(0, 10);

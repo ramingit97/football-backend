@@ -22,6 +22,9 @@ import { GameReminderModule } from './game-reminder/game-reminder.module';
 import { ElanlarModule } from './elanlar/elanlar.module';
 import { Elan } from './elanlar/entities/elan.entity';
 import { ElanMessage } from './elanlar/entities/elan-message.entity';
+import { LookupModule } from './lookup/lookup.module';
+import { Lookup } from './lookup/entities/lookup.entity';
+import { LookupMessage } from './lookup/entities/lookup-message.entity';
 import { TournamentsModule } from './tournaments/tournaments.module';
 import { Tournament } from './tournaments/entities/tournament.entity';
 import { TournamentTeam } from './tournaments/entities/tournament-team.entity';
@@ -89,6 +92,7 @@ import { PlayerReport } from './games/entities/player-report.entity';
                     Game, GamePlayerStats, ChatMessage, NoShow, PlayerReport,
                     SupportTicket,
                     Elan, ElanMessage,
+                    Lookup, LookupMessage,
                     Tournament, TournamentTeam, TournamentMatch, TournamentSlot, TournamentRosterPlayer,
                 ],
                 synchronize: true,
@@ -114,6 +118,7 @@ import { PlayerReport } from './games/entities/player-report.entity';
         TelegramBotModule,
         GameReminderModule,
         ElanlarModule,
+        LookupModule,
         TournamentsModule,
     ],
     controllers: [AnalyticsController],
